@@ -375,6 +375,38 @@ class CorrectionExportOut(ORM):
     created_at: UTCDateTime
 
 
+# ---- 대시보드 ----
+
+
+class DashboardCounts(BaseModel):
+    total: int  # 내가 올린 문서
+    completed: int  # 요약 승인 완료 (최종 문서 생성 여부 무관)
+    in_progress: int  # 분석 중 · 요약 전 · 요약 중 · 검토 중
+    failed: int
+    exports: int  # 만든 최종 문서(Word/PPT) 수
+    pending_reviews: int  # 검토 중 문서에서 아직 승인하지 않은 요약 항목 수
+
+
+class DashboardDocument(BaseModel):
+    id: int
+    title: str
+    vendor_name: str
+    source_type: str
+    page_count: int | None
+    created_at: UTCDateTime
+    stage: Literal["analyzing", "not_started", "summarizing", "reviewing", "approved", "exported", "failed"]
+    guide_id: int | None
+    target_language: str | None
+    approved_sections: int
+    total_sections: int
+    exports: int
+
+
+class DashboardOut(BaseModel):
+    counts: DashboardCounts
+    documents: list[DashboardDocument]
+
+
 # ---- 3단계: 커뮤니티 ----
 
 

@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+﻿import { useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, download } from "../api";
@@ -29,7 +29,7 @@ export default function GuidePage() {
     <>
       <div className="page-header">
         <p className="muted">
-          <Link to="/">문서 목록</Link> / <Link to={`/documents/${g.document_id}`}>{g.document_title}</Link>
+          <Link to="/documents">문서 목록</Link> / <Link to={`/documents/${g.document_id}`}>{g.document_title}</Link>
         </p>
         <h1>{languageLabel(g.target_language)} 요약 가이드</h1>
         <p className="muted">

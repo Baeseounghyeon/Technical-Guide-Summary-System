@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
@@ -39,7 +39,7 @@ export default function DocumentPage() {
   return (
     <>
       <div className="page-header">
-        <p className="muted"><Link to="/">문서 목록</Link> / {d.vendor_name}</p>
+        <p className="muted"><Link to="/documents">문서 목록</Link> / {d.vendor_name}</p>
         <h1>{d.title ?? d.url}</h1>
         <p className="muted">
           {d.source_type.toUpperCase()} · {d.page_count ? `${d.page_count}쪽 · ` : ""}

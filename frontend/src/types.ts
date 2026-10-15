@@ -220,6 +220,28 @@ export interface CorrectionLog {
   created_at: string;
 }
 
+// ---- 대시보드 ----
+
+export type DocumentStage = "analyzing" | "not_started" | "summarizing" | "reviewing" | "approved" | "exported" | "failed";
+
+export interface DashboardData {
+  counts: { total: number; completed: number; in_progress: number; failed: number; exports: number; pending_reviews: number };
+  documents: {
+    id: number;
+    title: string;
+    vendor_name: string;
+    source_type: string;
+    page_count: number | null;
+    created_at: string;
+    stage: DocumentStage;
+    guide_id: number | null;
+    target_language: string | null;
+    approved_sections: number;
+    total_sections: number;
+    exports: number;
+  }[];
+}
+
 // ---- 3단계: 커뮤니티 ----
 
 export type DomainAccess = "member" | "granted" | "none";

@@ -4,6 +4,7 @@ import { useAuth } from "./auth";
 import { ROLE_LABELS } from "./labels";
 import AdminPage from "./pages/AdminPage";
 import CommunityPage from "./pages/CommunityPage";
+import DashboardPage from "./pages/DashboardPage";
 import DomainPage from "./pages/DomainPage";
 import PostPage from "./pages/PostPage";
 import DocumentPage from "./pages/DocumentPage";
@@ -20,7 +21,8 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/signup" element={<SignupPage />} />
-      <Route path="/" element={<Protected><DocumentsPage /></Protected>} />
+      <Route path="/" element={<Protected><DashboardPage /></Protected>} />
+      <Route path="/documents" element={<Protected><DocumentsPage /></Protected>} />
       <Route path="/documents/:id" element={<Protected><DocumentPage /></Protected>} />
       <Route path="/guides/:id" element={<Protected><GuidePage /></Protected>} />
       <Route path="/partner-guides/:id" element={<Protected><PartnerGuidePage /></Protected>} />
@@ -50,7 +52,8 @@ function Protected({ children, roles }: { children: ReactNode; roles?: Role[] })
           기술 가이드 요약
         </Link>
         <nav>
-          <NavLink to="/" end>문서</NavLink>
+          <NavLink to="/" end>대시보드</NavLink>
+          <NavLink to="/documents">문서</NavLink>
           <NavLink to="/community">커뮤니티</NavLink>
           {SETTINGS_ROLES.includes(me.role) && <NavLink to="/settings">설정</NavLink>}
           {me.role === "platform_admin" && <NavLink to="/admin">관리자</NavLink>}

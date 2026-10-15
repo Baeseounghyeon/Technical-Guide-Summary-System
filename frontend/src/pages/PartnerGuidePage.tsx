@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+﻿import { useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, download } from "../api";
@@ -39,7 +39,7 @@ export default function PartnerGuidePage() {
     <>
       <div className="page-header">
         <p className="muted">
-          <Link to="/">문서 목록</Link> / <Link to={`/guides/${pg.guide_id}`}>{pg.vendor_document_title} 요약 가이드</Link>
+          <Link to="/documents">문서 목록</Link> / <Link to={`/guides/${pg.guide_id}`}>{pg.vendor_document_title} 요약 가이드</Link>
         </p>
         <h1>{pg.title ?? "파트너 가이드"}</h1>
         <p className="muted">
