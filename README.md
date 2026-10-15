@@ -1,7 +1,7 @@
 # 기술 가이드 요약 시스템
 
 벤더의 방대한 기술 가이드를 목차별로 요약·번역하고, 사용자 검토를 거쳐 Word/PowerPoint 문서로 만드는 웹 서비스입니다.
-기획과 설계는 [docs/PRODUCT_PLAN.md](docs/PRODUCT_PLAN.md)를 참고하세요.
+기획과 설계는 [docs/PRODUCT_PLAN.md](docs/PRODUCT_PLAN.md), 처음부터 다시 만들 때 쓰는 상세 명세(프롬프트)는 [docs/REBUILD_PROMPT.md](docs/REBUILD_PROMPT.md)를 참고하세요.
 
 현재 상태: **1단계**(요약·번역·검토·문서 생성), **2단계**(파트너 가이드 비교·오류 수정·이력), **3단계**(벤더 도메인 커뮤니티) 기본 기능이 모두 있습니다. 요약·오류 탐지는 아직 가짜 엔진으로 동작합니다.
 
