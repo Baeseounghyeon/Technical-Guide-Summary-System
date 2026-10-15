@@ -45,6 +45,7 @@ export default function GuidePage() {
         <div className="progress"><div style={{ width: `${total ? (generated / total) * 100 : 0}%` }} /></div>
         <div className="progress"><div style={{ width: `${total ? (approved / total) * 100 : 0}%`, background: "var(--ok)" }} /></div>
         <p className="muted">모든 항목을 승인해야 Word/PowerPoint 문서를 만들 수 있습니다.</p>
+        <BulkApprove guide={g} />
       </section>
 
       {g.overview && (
@@ -120,6 +121,35 @@ function PartnerGuidesPanel({ guide }: { guide: GuideDetail }) {
         </ul>
       )}
     </section>
+  );
+}
+
+function BulkApprove({ guide }: { guide: GuideDetail }) {
+  const queryClient = useQueryClient();
+  const drafts = guide.items.filter((it) => it.summary?.status === "draft").length;
+  const others = guide.items.filter((it) => it.summary && it.summary.status !== "draft" && it.summary.status !== "approved").length;
+  const approveAll = useMutation({
+    mutationFn: () => api<{ approved: number; remaining: number }>(`/guides/${guide.id}/approve-all`, { method: "POST" }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["guide", guide.id] }),
+  });
+
+  if (drafts === 0) return null;
+
+  function confirmAndApprove() {
+    const note = others ? `\n생성 중이거나 실패한 ${others}개 항목은 제외됩니다.` : "";
+    if (window.confirm(`초안 ${drafts}개 항목을 모두 승인할까요?\n아직 읽어 보지 않은 항목도 함께 승인됩니다.${note}`)) {
+      approveAll.mutate();
+    }
+  }
+
+  return (
+    <div className="actions" style={{ alignItems: "center" }}>
+      <button className="ok" disabled={approveAll.isPending} onClick={confirmAndApprove}>
+        초안 {drafts}개 전체 승인
+      </button>
+      {others > 0 && <span className="muted">생성 중·실패 {others}개는 제외됩니다.</span>}
+      {approveAll.error && <span className="error">{approveAll.error.message}</span>}
+    </div>
   );
 }
 

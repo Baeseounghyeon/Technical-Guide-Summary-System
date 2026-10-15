@@ -16,6 +16,7 @@ from ..models import (
     User,
 )
 from ..schemas import (
+    BulkApproveOut,
     GuideBrief,
     GuideCreate,
     GuideDetail,
@@ -98,6 +99,20 @@ def approve_summary(
         summary.guide.status = GuideStatus.APPROVED
     db.commit()
     return summary
+
+
+@router.post("/guides/{guide_id}/approve-all", response_model=BulkApproveOut)
+def approve_all(guide_id: int, user: User = Depends(get_active_user), db: Session = Depends(get_db)) -> BulkApproveOut:
+    """초안 상태인 요약을 한 번에 승인한다. 생성 중·실패·대기 항목은 건드리지 않는다."""
+    guide = get_guide_for_user(db, user, guide_id)
+    drafts = [s for s in guide.summaries if s.status == SummaryStatus.DRAFT]
+    for s in drafts:
+        s.status = SummaryStatus.APPROVED
+    remaining = sum(s.status != SummaryStatus.APPROVED for s in guide.summaries)
+    if remaining == 0 and guide.summaries:
+        guide.status = GuideStatus.APPROVED
+    db.commit()
+    return BulkApproveOut(approved=len(drafts), remaining=remaining, guide_status=guide.status)
 
 
 @router.put("/guides/{guide_id}/summaries/{summary_id}", response_model=SummaryOut)

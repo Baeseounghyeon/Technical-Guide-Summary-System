@@ -46,10 +46,8 @@ def _approved_guide(client, user, vendor_id: int, tmp_path: Path) -> int:
 
 
 def _approve_all(client, user, guide_id: int) -> None:
-    guide = client.get(f"/api/guides/{guide_id}", headers=user).json()
-    for item in guide["items"]:
-        if item["summary"]:
-            client.post(f"/api/guides/{guide_id}/summaries/{item['summary']['id']}/approve", headers=user)
+    r = client.post(f"/api/guides/{guide_id}/approve-all", headers=user)
+    assert r.status_code == 200 and r.json()["guide_status"] == "approved", r.text
 
 
 def _upload_partner(client, user, guide_id: int, path: Path):

@@ -194,6 +194,12 @@ class GuideDetail(BaseModel):
     items: list[GuideItem]
 
 
+class BulkApproveOut(BaseModel):
+    approved: int  # 이번에 승인한 항목 수
+    remaining: int  # 아직 승인되지 않은 항목 수 (생성 중·실패 등)
+    guide_status: str
+
+
 class SummaryEdit(BaseModel):
     content: str
 
