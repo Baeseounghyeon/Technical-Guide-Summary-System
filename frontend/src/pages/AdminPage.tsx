@@ -25,7 +25,8 @@ function AccessRequests() {
     queryKey: ["admin", "access-requests", showAll],
     queryFn: () => api<AccessGrant[]>(`/admin/access-requests${showAll ? "" : "?status=pending"}`),
   });
-  const refresh = () => queryClient.invalidateQueries({ queryKey: ["admin", "access-requests"] });
+  // 정식 소속 승인·회수는 파트너사-도메인 표도 바꾸므로 관리자 화면 전체를 새로 고친다.
+  const refresh = () => queryClient.invalidateQueries({ queryKey: ["admin"] });
   const revoke = useMutation({ mutationFn: (id: number) => api(`/admin/access-requests/${id}/revoke`, { method: "POST" }), onSuccess: refresh });
 
   return (
@@ -34,7 +35,9 @@ function AccessRequests() {
         <h2 style={{ margin: 0 }}>타 도메인 열람 신청</h2>
         <label className="check"><input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} />처리한 신청도 보기</label>
       </div>
-      <p className="muted">승인하면 정한 기간 동안 해당 도메인 커뮤니티를 읽기만 할 수 있습니다.</p>
+      <p className="muted">
+        승인 방식을 고를 수 있습니다. 읽기 전용은 신청자만 정한 기간 동안 커뮤니티를 볼 수 있고, 정식 소속은 신청자의 파트너사 전체에 그 벤더 도메인을 부여합니다. 둘 다 회수할 수 있습니다.
+      </p>
       {requests.data?.length === 0 && <p className="muted">{showAll ? "신청 기록이 없습니다." : "대기 중인 신청이 없습니다."}</p>}
       <div className="table-wrap">
         <table>
@@ -50,8 +53,9 @@ function AccessRequests() {
                   </td>
                   <td>
                     <span className={`badge ${g.active ? "approved" : g.status}`}>
-                      {g.status === "approved" && !g.active ? "기간 만료" : GRANT_STATUS[g.status]}
+                      {g.status === "approved" && !g.active ? (g.grant_type === "member" ? "소속 해제됨" : "기간 만료") : GRANT_STATUS[g.status]}
                     </span>
+                    {g.grant_type && <span className="muted"> {g.grant_type === "member" ? "정식 소속" : "읽기 전용"}</span>}
                     <div className="muted">
                       {g.decided_by_name}
                       {g.expires_at && g.status === "approved" && ` · ${new Date(g.expires_at).toLocaleDateString()}까지`}
@@ -71,11 +75,12 @@ function AccessRequests() {
 }
 
 function AccessRequestRow({ grant, onDone }: { grant: AccessGrant; onDone: () => void }) {
+  const [grantType, setGrantType] = useState<"read" | "member">("read");
   const [days, setDays] = useState(grant.requested_days);
   const [note, setNote] = useState("");
   const decide = useMutation({
     mutationFn: (approve: boolean) =>
-      api(`/admin/access-requests/${grant.id}/decision`, { method: "POST", json: { approve, days, note } }),
+      api(`/admin/access-requests/${grant.id}/decision`, { method: "POST", json: { approve, grant_type: grantType, days, note } }),
     onSuccess: onDone,
   });
 
@@ -87,11 +92,26 @@ function AccessRequestRow({ grant, onDone }: { grant: AccessGrant; onDone: () =>
         <div>사유: {grant.reason}</div>
         {decide.error && <div className="error">{decide.error.message}</div>}
       </td>
-      <td style={{ width: 120 }}>
-        <label>
-          기간(일)
-          <input type="number" min={1} max={365} value={days} onChange={(e) => setDays(Number(e.target.value))} />
+      <td style={{ width: 260 }}>
+        <label className="check">
+          <input type="radio" checked={grantType === "read"} onChange={() => setGrantType("read")} />
+          기간 한정 읽기 전용 (신청자만)
         </label>
+        {grantType === "read" && (
+          <label style={{ marginLeft: 22 }}>
+            기간(일)
+            <input type="number" min={1} max={365} value={days} onChange={(e) => setDays(Number(e.target.value))} />
+          </label>
+        )}
+        <label className="check">
+          <input type="radio" checked={grantType === "member"} onChange={() => setGrantType("member")} />
+          정식 소속 부여
+        </label>
+        {grantType === "member" && (
+          <div className="muted" style={{ marginLeft: 22 }}>
+            {grant.user.partner_name ?? "신청자 파트너사"} 전체가 {grant.vendor_name} 도메인에서 읽기·쓰기·문서 업로드를 할 수 있습니다. 기간 제한 없음.
+          </div>
+        )}
       </td>
       <td><label>메모<input value={note} onChange={(e) => setNote(e.target.value)} /></label></td>
       <td style={{ whiteSpace: "nowrap" }}>

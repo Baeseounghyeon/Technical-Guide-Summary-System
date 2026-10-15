@@ -287,6 +287,7 @@ export interface AccessGrant {
   reason: string;
   requested_days: number;
   status: "pending" | "approved" | "rejected" | "revoked";
+  grant_type: "read" | "member" | null;
   active: boolean;
   decided_by_name: string | null;
   decided_at: string | null;

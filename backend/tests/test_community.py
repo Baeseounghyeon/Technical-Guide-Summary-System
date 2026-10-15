@@ -24,6 +24,10 @@ def _setup(client):
     return admin, vendor_a, vendor_b, a1, a2, b1
 
 
+def _partner_id(client, admin, name: str) -> int:
+    return next(p["id"] for p in client.get("/api/admin/partners", headers=admin).json() if p["name"] == name)
+
+
 def test_domain_community_and_access_grants(client):
     admin, vendor_a, vendor_b, a1, a2, b1 = _setup(client)
     va = vendor_a["id"]
@@ -120,7 +124,19 @@ def test_domain_community_and_access_grants(client):
     r = client.post(f"/api/admin/access-requests/{grant3}/decision", json={"approve": False, "note": "필요성 부족"}, headers=admin)
     assert r.json()["status"] == "rejected" and r.json()["decision_note"] == "필요성 부족"
 
-    # 6) 글 삭제는 작성자(또는 관리자)만, 해결 댓글 삭제 시 지정 해제
+    # 6) 정식 소속 부여: 신청자의 파트너사 전체가 도메인 소속이 되고, 회수하면 빠진다.
+    b1_colleague = _signup_and_approve(client, admin, "b1-2@comm.example.com", _partner_id(client, admin, "커뮤B1"))
+    grant4 = client.post(f"/api/community/{va}/access-requests", json={"reason": "A 벤더 신규 지원 시작"}, headers=b1).json()["id"]
+    r = client.post(f"/api/admin/access-requests/{grant4}/decision", json={"approve": True, "grant_type": "member"}, headers=admin)
+    assert r.json()["grant_type"] == "member" and r.json()["active"] and r.json()["expires_at"] is None
+    for who in (b1, b1_colleague):
+        assert {d["vendor_name"]: d["access"] for d in client.get("/api/community/domains", headers=who).json()}["CommVendorA"] == "member"
+    assert client.post(f"/api/community/{va}/posts", json={"title": "B1 첫 글", "body": "이제 쓸 수 있음"}, headers=b1_colleague).status_code == 201
+    assert va in [v["id"] for v in client.get("/api/vendors", headers=b1).json()]  # 문서 업로드 도메인에도 나타남
+    assert client.post(f"/api/admin/access-requests/{grant4}/revoke", headers=admin).json()["active"] is False
+    assert client.get(f"/api/community/{va}/posts", headers=b1_colleague).status_code == 403
+
+    # 7) 글 삭제는 작성자(또는 관리자)만, 해결 댓글 삭제 시 지정 해제
     assert client.delete(f"/api/community/comments/{comment_id}", headers=a1).status_code == 403
     assert client.delete(f"/api/community/comments/{comment_id}", headers=a2).status_code == 204
     assert client.get(f"/api/community/posts/{post['id']}", headers=a1).json()["solution_comment_id"] is None

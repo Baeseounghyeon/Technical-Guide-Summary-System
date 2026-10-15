@@ -464,6 +464,7 @@ class AccessGrantOut(BaseModel):
     reason: str
     requested_days: int
     status: str
+    grant_type: str | None
     active: bool
     decided_by_name: str | None
     decided_at: UTCDateTime | None
@@ -474,5 +475,7 @@ class AccessGrantOut(BaseModel):
 
 class AccessDecisionIn(BaseModel):
     approve: bool
-    days: int | None = Field(default=None, ge=1, le=365)  # 비우면 신청 기간
+    # read: 기간 한정 읽기 전용 / member: 신청자의 파트너사에 도메인 정식 부여(읽기·쓰기·문서 업로드)
+    grant_type: Literal["read", "member"] = "read"
+    days: int | None = Field(default=None, ge=1, le=365)  # read 일 때만. 비우면 신청 기간
     note: str | None = None

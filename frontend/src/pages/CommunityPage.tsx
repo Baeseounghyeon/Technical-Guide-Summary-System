@@ -65,8 +65,9 @@ export default function CommunityPage() {
                     <td>{g.reason}</td>
                     <td>
                       <span className={`badge ${g.active ? "approved" : g.status}`}>
-                        {g.status === "approved" && !g.active ? "기간 만료" : GRANT_STATUS[g.status]}
+                        {g.status === "approved" && !g.active ? (g.grant_type === "member" ? "소속 해제됨" : "기간 만료") : GRANT_STATUS[g.status]}
                       </span>
+                      {g.grant_type && <span className="muted"> {g.grant_type === "member" ? "정식 소속" : "읽기 전용"}</span>}
                     </td>
                     <td className="muted">
                       {g.decided_by_name && `${g.decided_by_name} · `}

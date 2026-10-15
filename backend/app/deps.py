@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from .db import get_db
@@ -97,6 +97,8 @@ def active_grant(db: Session, user: User, vendor_id: int) -> AccessGrant | None:
             AccessGrant.user_id == user.id,
             AccessGrant.vendor_id == vendor_id,
             AccessGrant.status == GrantStatus.APPROVED,
+            # 정식 소속(member) 승인은 파트너사-도메인 연결로 판단하므로 여기서는 읽기 전용 승인만 본다.
+            or_(AccessGrant.grant_type.is_(None), AccessGrant.grant_type != "member"),
         )
     )
     now = utcnow()

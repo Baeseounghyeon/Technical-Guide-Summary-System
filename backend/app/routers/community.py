@@ -281,8 +281,18 @@ def admin_decide(
     if grant.status != GrantStatus.PENDING:
         raise HTTPException(status.HTTP_409_CONFLICT, "이미 처리된 신청입니다.")
     now = utcnow()
+    if body.approve and body.grant_type == "member":
+        # 정식 소속: 신청자의 파트너사에 도메인을 연결한다 → 그 파트너사 엔지니어 모두 읽기·쓰기·문서 업로드 가능
+        partner = grant.user.partner
+        if partner is None:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "신청자에게 소속 파트너사가 없어 정식 소속을 부여할 수 없습니다.")
+        if grant.vendor not in partner.vendors:
+            partner.vendors.append(grant.vendor)
+        grant.expires_at = None
+    elif body.approve:
+        grant.expires_at = now + timedelta(days=body.days or grant.requested_days)
     grant.status = GrantStatus.APPROVED if body.approve else GrantStatus.REJECTED
-    grant.expires_at = now + timedelta(days=body.days or grant.requested_days) if body.approve else None
+    grant.grant_type = body.grant_type if body.approve else None
     grant.decided_by, grant.decided_at, grant.decision_note = admin.id, now, (body.note or "").strip() or None
     db.commit()
     return _grant_out(db, grant)
@@ -293,6 +303,8 @@ def admin_revoke(grant_id: int, admin: User = Depends(require_platform_admin), d
     grant = _grant_or_404(db, grant_id)
     if grant.status != GrantStatus.APPROVED:
         raise HTTPException(status.HTTP_409_CONFLICT, "승인된 열람만 회수할 수 있습니다.")
+    if grant.grant_type == "member" and grant.user.partner and grant.vendor in grant.user.partner.vendors:
+        grant.user.partner.vendors.remove(grant.vendor)  # 정식 소속 회수: 파트너사-도메인 연결을 끊는다
     grant.status = GrantStatus.REVOKED
     grant.decided_by, grant.decided_at = admin.id, utcnow()
     db.commit()
@@ -408,6 +420,14 @@ def _event_out(user: User, event: SessionEvent, access: str) -> EventOut:
     )
 
 
+def _grant_active(g: AccessGrant) -> bool:
+    if g.status != GrantStatus.APPROVED:
+        return False
+    if g.grant_type == "member":
+        return bool(g.user.partner) and g.vendor in g.user.partner.vendors
+    return bool(g.expires_at) and as_utc(g.expires_at) > utcnow()
+
+
 def _grant_or_404(db: Session, grant_id: int) -> AccessGrant:
     grant = db.get(AccessGrant, grant_id)
     if grant is None:
@@ -426,7 +446,8 @@ def _grant_out(db: Session, g: AccessGrant) -> AccessGrantOut:
         reason=g.reason,
         requested_days=g.requested_days,
         status=g.status,
-        active=g.status == GrantStatus.APPROVED and bool(g.expires_at) and as_utc(g.expires_at) > utcnow(),
+        grant_type=g.grant_type,
+        active=_grant_active(g),
         decided_by_name=decider.name if decider else None,
         decided_at=g.decided_at,
         expires_at=g.expires_at,

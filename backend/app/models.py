@@ -495,6 +495,8 @@ class AccessGrant(Base):
     reason: Mapped[str] = mapped_column(Text)
     requested_days: Mapped[int] = mapped_column(Integer, default=30)
     status: Mapped[str] = mapped_column(String(20), default=GrantStatus.PENDING)
+    # 승인 방식. read: 기간 한정 읽기 전용(이 사용자만), member: 신청자의 파트너사에 도메인을 정식 부여
+    grant_type: Mapped[str | None] = mapped_column(String(10))
     decided_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
