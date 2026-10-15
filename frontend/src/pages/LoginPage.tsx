@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { Link, Navigate, useNavigate } from "react-router-dom";
+import logoUrl from "../assets/unipoint-logo.png";
 import { useAuth } from "../auth";
 
 export default function LoginPage() {
@@ -29,7 +30,7 @@ export default function LoginPage() {
   return (
     <div className="page">
       <div className="card auth-card">
-        <div className="auth-brand">unipoint<span className="brand-dot" aria-hidden="true" /></div>
+        <img className="auth-brand" src={logoUrl} alt="unipoint" />
         <h1>로그인</h1>
         <p className="muted">벤더 기술 가이드 요약 · 공유</p>
         <form className="form" onSubmit={submit}>

@@ -1,5 +1,7 @@
 """플랫폼 관리자 전용: 가입 승인, 파트너사·벤더 도메인 관리."""
 
+import uuid
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
@@ -30,6 +32,8 @@ def list_users(
     query = select(User).order_by(User.created_at.desc())
     if status_filter:
         query = query.where(User.status == status_filter)
+    else:
+        query = query.where(User.status != UserStatus.DELETED)
     all_vendors = sorted(v.name for v in db.scalars(select(Vendor)))
     return [
         AdminUserOut(
@@ -70,6 +74,21 @@ def approve_user(user_id: int, body: ApproveIn, db: Session = Depends(get_db)) -
     user.status = UserStatus.ACTIVE
     db.commit()
     return user
+
+
+@router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_user(user_id: int, admin: User = Depends(require_platform_admin), db: Session = Depends(get_db)) -> None:
+    """가입자 삭제. 문서·이력·게시글의 작성자 기록은 남겨야 하므로 계정을 '삭제됨'으로 바꿔
+    로그인과 목록에서 빼고, 같은 메일로 다시 가입할 수 있게 메일 주소를 비워 둔다."""
+    user = _get_or_404(db, User, user_id)
+    if user.id == admin.id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "자기 자신은 삭제할 수 없습니다.")
+    if user.status == UserStatus.DELETED:
+        raise HTTPException(status.HTTP_409_CONFLICT, "이미 삭제된 가입자입니다.")
+    user.status = UserStatus.DELETED
+    user.email = f"deleted-{user.id}-{uuid.uuid4().hex[:8]}@deleted.invalid"
+    user.phone = None
+    db.commit()
 
 
 @router.post("/users/{user_id}/suspend", response_model=UserOut)

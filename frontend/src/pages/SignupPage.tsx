@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
+import logoUrl from "../assets/unipoint-logo.png";
 
 const EMPTY = { email: "", password: "", name: "", company_name: "", department: "", phone: "" };
 
@@ -26,7 +27,7 @@ export default function SignupPage() {
   return (
     <div className="page">
       <div className="card auth-card">
-        <div className="auth-brand">unipoint<span className="brand-dot" aria-hidden="true" /></div>
+        <img className="auth-brand" src={logoUrl} alt="unipoint" />
         <h1>가입 신청</h1>
         {done ? (
           <>

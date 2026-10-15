@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import logoUrl from "./assets/unipoint-logo.png";
 import { useAuth } from "./auth";
 import { ROLE_LABELS } from "./labels";
 import AdminPage from "./pages/AdminPage";
@@ -51,10 +52,10 @@ function Protected({ children, roles }: { children: ReactNode; roles?: Role[] })
     <>
       <header className="topbar">
         <Link to="/" className="brand" aria-label="unipoint 홈">
-          unipoint<span className="brand-dot" aria-hidden="true" />
+          <img src={logoUrl} alt="unipoint" />
         </Link>
         <nav>
-          <NavLink to="/" end>대시보드</NavLink>
+          <NavLink to="/" end>홈</NavLink>
           <NavLink to="/documents">문서</NavLink>
           <NavLink to="/shared">가이드 공유</NavLink>
           <NavLink to="/community">커뮤니티</NavLink>

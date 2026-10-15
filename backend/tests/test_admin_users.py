@@ -33,5 +33,21 @@ def test_admin_user_list(client):
     pending = client.get("/api/admin/users", params={"status": "pending"}, headers=admin).json()
     assert "member@member.example.com" not in {u["email"] for u in pending}
 
-    # 관리자가 아니면 볼 수 없다.
+    # 관리자가 아니면 볼 수 없고 삭제할 수도 없다.
     assert client.get("/api/admin/users", headers=user).status_code == 403
+    assert client.delete(f"/api/admin/users/{waiting['id']}", headers=user).status_code == 403
+
+    # 삭제: 목록·로그인에서 빠지고, 같은 메일로 다시 가입할 수 있다. 자기 자신은 삭제 불가.
+    admin_id = users["admin@example.com"]["id"]
+    assert client.delete(f"/api/admin/users/{admin_id}", headers=admin).status_code == 400
+    assert client.delete(f"/api/admin/users/{member['id']}", headers=admin).status_code == 204
+    assert client.delete(f"/api/admin/users/{member['id']}", headers=admin).status_code == 409
+    emails = {u["email"] for u in client.get("/api/admin/users", headers=admin).json()}
+    assert "member@member.example.com" not in emails
+    assert client.get("/api/vendors", headers=user).status_code == 403  # 이미 받은 토큰도 더는 쓸 수 없다
+    assert client.post("/api/auth/login", json={"email": "member@member.example.com", "password": "engineer-pass-1"}).status_code == 401
+    r = client.post(
+        "/api/auth/signup",
+        json={"email": "member@member.example.com", "password": "new-pass-123", "name": "재가입", "company_name": "가입자파트너"},
+    )
+    assert r.status_code == 201

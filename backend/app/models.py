@@ -32,6 +32,7 @@ class UserStatus(StrEnum):
     PENDING = "pending"
     ACTIVE = "active"
     SUSPENDED = "suspended"
+    DELETED = "deleted"  # 관리자가 삭제. 작성 기록은 남기고 로그인·목록에서 제외
 
 
 class DocStatus(StrEnum):

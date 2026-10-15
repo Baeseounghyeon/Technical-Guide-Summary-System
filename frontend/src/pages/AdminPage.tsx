@@ -1,6 +1,7 @@
 import { Fragment, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
+import { useAuth } from "../auth";
 import { GRANT_STATUS, ROLE_LABELS } from "../labels";
 import type { AccessGrant, AdminUser, Partner, Role, Vendor } from "../types";
 
@@ -9,7 +10,7 @@ export default function AdminPage() {
     <>
       <div className="page-header">
         <h1>관리자</h1>
-        <p className="muted">가입자 승인과 소속·권한, 다른 도메인 권한 신청, 파트너사와 벤더 도메인을 관리합니다.</p>
+        <p className="muted">가입자 승인·수정·삭제, 다른 도메인 권한 신청, 파트너사와 벤더 도메인을 관리합니다.</p>
       </div>
       <Members />
       <AccessRequests />
@@ -27,6 +28,12 @@ function Members() {
   });
   const partners = useQuery({ queryKey: ["admin", "partners"], queryFn: () => api<Partner[]>("/admin/partners") });
   const [editing, setEditing] = useState<number | null>(null);
+  const { me } = useAuth();
+  const queryClient = useQueryClient();
+  const remove = useMutation({
+    mutationFn: (id: number) => api(`/admin/users/${id}`, { method: "DELETE" }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin"] }),
+  });
   const keyword = q.trim().toLowerCase();
   // 승인 대기자를 맨 위로
   const shown = (users.data ?? [])
@@ -53,25 +60,25 @@ function Members() {
         </label>
       </div>
       <p className="muted">{shown.length}명</p>
+      {remove.error && <p className="error">{remove.error.message}</p>}
       <div className="table-wrap">
-        <table style={{ minWidth: 1040 }}>
+        <table style={{ minWidth: 900 }}>
           <thead>
-            <tr><th>이름</th><th>가입 일시</th><th>메일</th><th>전화번호</th><th>소속</th><th>할당된 도메인</th><th>권한</th><th>상태</th><th /></tr>
+            <tr><th>이름</th><th>소속</th><th>이메일</th><th>전화번호</th><th>도메인</th><th>상태</th><th /></tr>
           </thead>
           <tbody>
             {shown.map((u) => (
               <Fragment key={u.id}>
               <tr className={u.status === "pending" ? "highlight" : ""}>
-                <td style={{ whiteSpace: "nowrap" }}>{u.name}</td>
-                <td style={{ whiteSpace: "nowrap" }}>{new Date(u.created_at).toLocaleString()}</td>
-                <td>{u.email}</td>
-                <td style={{ whiteSpace: "nowrap" }}>{u.phone || "-"}</td>
+                <td style={{ whiteSpace: "nowrap" }} title={`가입: ${new Date(u.created_at).toLocaleString()}`}>{u.name}</td>
                 <td style={{ minWidth: 120 }}>
                   {u.partner_name ?? <span className="muted">미지정</span>}
                   {(u.department || (!u.partner_name && u.company_name)) && (
                     <div className="muted">{[u.department, !u.partner_name && u.company_name ? `신청: ${u.company_name}` : null].filter(Boolean).join(" · ")}</div>
                   )}
                 </td>
+                <td>{u.email}</td>
+                <td style={{ whiteSpace: "nowrap" }}>{u.phone || "-"}</td>
                 <td>
                   {u.role === "platform_admin" ? (
                     <span className="muted">전체 도메인</span>
@@ -88,19 +95,33 @@ function Members() {
                     </div>
                   )}
                 </td>
-                <td style={{ whiteSpace: "nowrap" }}>{u.status === "pending" ? <span className="muted">-</span> : ROLE_LABELS[u.role]}</td>
                 <td><span className={`badge ${u.status}`}>{USER_STATUS[u.status]}</span></td>
                 <td style={{ whiteSpace: "nowrap" }}>
                   {editing !== u.id && (
-                    <button className={u.status === "pending" ? "primary" : "link"} onClick={() => setEditing(u.id)}>
-                      {u.status === "pending" ? "승인하기" : "소속·권한 변경"}
-                    </button>
+                    <div className="actions">
+                      <button className={u.status === "pending" ? "primary" : "link"} onClick={() => setEditing(u.id)}>
+                        {u.status === "pending" ? "승인하기" : "수정"}
+                      </button>
+                      {u.id !== me?.id && (
+                        <button
+                          className="link danger-link"
+                          disabled={remove.isPending}
+                          onClick={() => {
+                            if (window.confirm(`${u.name}(${u.email}) 가입자를 삭제할까요?\n삭제하면 로그인할 수 없고 목록에서 사라집니다. 올린 문서와 작성 기록은 남습니다.`)) {
+                              remove.mutate(u.id);
+                            }
+                          }}
+                        >
+                          삭제
+                        </button>
+                      )}
+                    </div>
                   )}
                 </td>
               </tr>
               {editing === u.id && (
                 <tr className={u.status === "pending" ? "highlight" : ""}>
-                  <td colSpan={9}>
+                  <td colSpan={7}>
                     <AssignForm user={u} partners={partners.data ?? []} onDone={() => setEditing(null)} />
                   </td>
                 </tr>
