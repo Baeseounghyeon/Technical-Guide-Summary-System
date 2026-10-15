@@ -102,6 +102,7 @@ export interface GuideItem {
 export interface GuideDetail {
   id: number;
   document_id: number;
+  partner_id: number | null;
   document_title: string | null;
   vendor_name: string;
   target_language: string;

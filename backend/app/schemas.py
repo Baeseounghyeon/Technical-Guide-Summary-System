@@ -185,6 +185,7 @@ class GuideProgress(BaseModel):
 class GuideDetail(BaseModel):
     id: int
     document_id: int
+    partner_id: int | None  # 원본 문서를 올린 파트너사
     document_title: str | None
     vendor_name: str
     target_language: str
@@ -233,6 +234,8 @@ class RevisionInfo(BaseModel):
 
 class ExportCreate(BaseModel):
     format: Literal["docx", "pptx"]
+    # 로고·양식을 가져올 파트너사. 비우면 원본 문서의 파트너사. 관리자는 아무 파트너사나 고를 수 있다.
+    partner_id: int | None = None
     doc_version: str = Field(default="1.0", min_length=1, max_length=50)
     include_logo: bool = False
     use_partner_template: bool = False
@@ -241,6 +244,7 @@ class ExportCreate(BaseModel):
 
 class ExportOut(ORM):
     id: int
+    partner_id: int | None
     format: str
     doc_version: str
     include_logo: bool

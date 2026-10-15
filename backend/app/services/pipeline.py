@@ -185,7 +185,8 @@ def fail_export_guide(db: Session, job: Job, error: str) -> None:
 def _export_context(db: Session, export: Export) -> ExportContext:
     guide = export.guide
     doc = guide.document
-    partner = db.get(Partner, doc.partner_id) if doc.partner_id else None
+    partner_id = export.partner_id or doc.partner_id
+    partner = db.get(Partner, partner_id) if partner_id else None
     summaries = {s.section_id: s for s in guide.summaries}
 
     sections = []

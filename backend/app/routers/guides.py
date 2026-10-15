@@ -72,6 +72,7 @@ def get_guide(guide_id: int, user: User = Depends(get_active_user), db: Session 
     return GuideDetail(
         id=guide.id,
         document_id=guide.document_id,
+        partner_id=guide.document.partner_id,
         document_title=guide.document.title,
         vendor_name=guide.document.vendor.name,
         target_language=guide.target_language,

@@ -21,14 +21,20 @@ _INLINE = re.compile(r"(\*\*.+?\*\*|`.+?`)")
 
 
 def build_docx(ctx: ExportContext, out_path: Path) -> None:
-    doc = Document(open_template(ctx.template_path)) if ctx.template_path else Document()
-    _set_default_font(doc)
+    if ctx.template_path:
+        # 파트너 양식: 본문 내용은 지우고 디자인(스타일, 머리글·바닥글의 로고, 용지·여백)만 쓴다.
+        doc = Document(open_template(ctx.template_path))
+        _clear_body(doc)
+    else:
+        doc = Document()
+        _set_default_font(doc)
 
     # 표지
     if ctx.logo_path:
         doc.add_picture(str(ctx.logo_path), width=Cm(5))
-        header = doc.sections[0].header.paragraphs[0]
-        header.add_run().add_picture(str(ctx.logo_path), height=Cm(1))
+        if not ctx.template_path:  # 양식에는 보통 머리글 로고가 이미 있으므로 겹치지 않게 한다.
+            header = doc.sections[0].header.paragraphs[0]
+            header.add_run().add_picture(str(ctx.logo_path), height=Cm(1))
     _para(doc, ctx.title, "Title")
     _para(doc, f"벤더: {ctx.vendor}")
     _para(doc, f"언어: {language_native_name(ctx.target_language)}")
@@ -93,6 +99,14 @@ def _apply_style(obj, style: str) -> None:
         obj.style = style
     except (KeyError, ValueError):
         pass
+
+
+def _clear_body(doc: DocxDocument) -> None:
+    """양식 본문의 문단·표·그림을 모두 지운다. 마지막 구역 설정(용지, 여백, 머리글·바닥글 연결)은 남긴다."""
+    body = doc.element.body
+    for child in list(body):
+        if child.tag != qn("w:sectPr"):
+            body.remove(child)
 
 
 def _set_default_font(doc: DocxDocument) -> None:

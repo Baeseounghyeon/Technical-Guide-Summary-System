@@ -3,8 +3,8 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..deps import get_active_user, get_guide_for_user
-from ..models import Export, ExportStatus, GuideStatus, JobKind, User
+from ..deps import get_active_user, get_guide_for_user, is_admin
+from ..models import Export, ExportStatus, GuideStatus, JobKind, Partner, User
 from ..schemas import ExportCreate, ExportOut
 from ..services.jobs import enqueue
 
@@ -24,8 +24,24 @@ def create_export(
     # 피드백 필수: 모든 목차 항목이 승인되어야 최종 문서를 만들 수 있다.
     if guide.status != GuideStatus.APPROVED:
         raise HTTPException(status.HTTP_409_CONFLICT, "모든 목차 항목을 승인한 뒤에 문서를 생성할 수 있습니다.")
+
+    partner_id = body.partner_id or guide.document.partner_id
+    if partner_id is not None and not is_admin(user) and partner_id != user.partner_id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "다른 파트너사의 로고·양식은 쓸 수 없습니다.")
+    partner = db.get(Partner, partner_id) if partner_id else None
+    if partner_id and partner is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "파트너사를 찾을 수 없습니다.")
+    if body.use_partner_template:
+        template = (partner.docx_template_path if body.format == "docx" else partner.pptx_template_path) if partner else None
+        if not template:
+            kind = "Word" if body.format == "docx" else "PowerPoint"
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, f"선택한 파트너사에 등록된 {kind} 양식이 없습니다. 먼저 양식을 올려 주세요.")
+    if body.include_logo and not (partner and partner.logo_path):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "선택한 파트너사에 등록된 로고가 없습니다.")
+
     export = Export(
         guide=guide,
+        partner_id=partner_id,
         format=body.format,
         doc_version=body.doc_version,
         include_logo=body.include_logo,

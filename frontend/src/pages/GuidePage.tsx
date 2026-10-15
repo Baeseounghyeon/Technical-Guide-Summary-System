@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, download } from "../api";
 import { useAuth } from "../auth";
 import { ORIGIN_LABELS, PARTNER_GUIDE_STATUS, STATUS_LABELS, languageLabel } from "../labels";
-import type { ExportItem, GuideDetail, GuideItem, PartnerGuide, Revision, RevisionInfo } from "../types";
+import type { ExportItem, GuideDetail, GuideItem, Partner, PartnerGuide, Revision, RevisionInfo } from "../types";
 
 const BUSY = new Set(["pending", "generating"]);
 
@@ -266,6 +266,62 @@ function SummaryCard({ guideId, item }: { guideId: number; item: GuideItem }) {
   );
 }
 
+const ASSETS: { kind: "logo" | "docx_template" | "pptx_template"; label: string; accept: string; field: keyof Partner }[] = [
+  { kind: "logo", label: "로고", accept: ".png,.jpg,.jpeg", field: "logo_path" },
+  { kind: "docx_template", label: "Word 양식", accept: ".docx,.dotx", field: "docx_template_path" },
+  { kind: "pptx_template", label: "PowerPoint 양식", accept: ".pptx,.potx", field: "pptx_template_path" },
+];
+
+function PartnerAssets({ partner, canManage, onUploaded }: { partner: Partner; canManage: boolean; onUploaded: () => void }) {
+  const upload = useMutation({
+    mutationFn: ({ kind, file }: { kind: string; file: File }) => {
+      const form = new FormData();
+      form.append("file", file);
+      return api(`/partners/${partner.id}/assets/${kind}`, { method: "POST", body: form });
+    },
+    onSuccess: onUploaded,
+  });
+
+  return (
+    <div className="table-wrap">
+      <table>
+        <tbody>
+          {ASSETS.map((a) => (
+            <tr key={a.kind}>
+              <td style={{ width: 140 }}>{a.label}</td>
+              <td>
+                {partner[a.field] ? <span className="badge approved">등록됨</span> : <span className="badge">없음</span>}
+              </td>
+              <td>
+                {canManage ? (
+                  <label className="check" style={{ cursor: "pointer" }}>
+                    <span className="link-like">{partner[a.field] ? "다른 파일로 교체" : "파일 올리기"}</span>
+                    <input
+                      type="file"
+                      accept={a.accept}
+                      style={{ display: "none" }}
+                      disabled={upload.isPending}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) upload.mutate({ kind: a.kind, file });
+                        e.target.value = "";
+                      }}
+                    />
+                  </label>
+                ) : (
+                  <span className="muted">파트너 관리자만 올릴 수 있습니다</span>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {upload.isPending && <p className="muted">올리는 중…</p>}
+      {upload.error && <p className="error">{upload.error.message}</p>}
+    </div>
+  );
+}
+
 function ExportPanel({ guide }: { guide: GuideDetail }) {
   const { me } = useAuth();
   const queryClient = useQueryClient();
@@ -289,15 +345,29 @@ function ExportPanel({ guide }: { guide: GuideDetail }) {
     change_note: "",
   });
 
+  // 로고·양식을 가져올 파트너사: 관리자는 모든 파트너사, 그 외에는 자기 파트너사만.
+  const isAdmin = me?.role === "platform_admin";
+  const partners = useQuery({
+    queryKey: ["export-partners", isAdmin, me?.partner_id],
+    queryFn: async () =>
+      isAdmin ? api<Partner[]>("/admin/partners") : me?.partner_id ? [await api<Partner>(`/partners/${me.partner_id}`)] : [],
+  });
+  const [chosenPartner, setChosenPartner] = useState<number | "" | undefined>(undefined);
+  const partnerId = chosenPartner ?? guide.partner_id ?? me?.partner_id ?? partners.data?.[0]?.id ?? "";
+  const partner = partners.data?.find((p) => p.id === partnerId);
+  const hasTemplate = !!(format === "docx" ? partner?.docx_template_path : partner?.pptx_template_path);
+  const hasLogo = !!partner?.logo_path;
+
   const create = useMutation({
     mutationFn: () =>
       api<ExportItem>(`/guides/${guide.id}/exports`, {
         method: "POST",
         json: {
           format,
+          partner_id: partnerId === "" ? null : partnerId,
           doc_version: version,
-          include_logo: includeLogo,
-          use_partner_template: useTemplate,
+          include_logo: includeLogo && hasLogo,
+          use_partner_template: useTemplate && hasTemplate,
           revision: withHistory ? revision : null,
         },
       }),
@@ -333,9 +403,39 @@ function ExportPanel({ guide }: { guide: GuideDetail }) {
           </label>
           <label>문서 버전<input value={version} onChange={(e) => setVersion(e.target.value)} required /></label>
         </div>
+        <div className="template-box">
+          <label>
+            로고·양식을 쓸 파트너사
+            <select value={partnerId} onChange={(e) => setChosenPartner(Number(e.target.value) || "")} disabled={!isAdmin}>
+              <option value="">(사용 안 함)</option>
+              {partners.data?.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </label>
+          {partner && (
+            <PartnerAssets
+              partner={partner}
+              canManage={isAdmin || me?.role === "partner_admin"}
+              onUploaded={() => queryClient.invalidateQueries({ queryKey: ["export-partners"] })}
+            />
+          )}
+          <div className="actions">
+            <label className="check">
+              <input type="checkbox" checked={useTemplate && hasTemplate} disabled={!hasTemplate} onChange={(e) => setUseTemplate(e.target.checked)} />
+              파트너 양식 사용 ({format === "docx" ? "Word" : "PowerPoint"})
+            </label>
+            <label className="check">
+              <input type="checkbox" checked={includeLogo && hasLogo} disabled={!hasLogo} onChange={(e) => setIncludeLogo(e.target.checked)} />
+              표지에 로고 넣기
+            </label>
+          </div>
+          {partner && !hasTemplate && (
+            <p className="muted">이 파트너사에 {format === "docx" ? "Word" : "PowerPoint"} 양식이 없습니다. 위에서 양식 파일을 올리면 사용할 수 있습니다.</p>
+          )}
+          <p className="muted">
+            파트너 양식을 쓰면 양식 파일 안의 기존 내용은 지우고, 머리글·바닥글 로고, 글꼴·색, 슬라이드 마스터와 크기 같은 디자인만 가져와 요약 내용을 채웁니다.
+          </p>
+        </div>
         <div className="actions">
-          <label className="check"><input type="checkbox" checked={includeLogo} onChange={(e) => setIncludeLogo(e.target.checked)} />파트너사 로고 넣기</label>
-          <label className="check"><input type="checkbox" checked={useTemplate} onChange={(e) => setUseTemplate(e.target.checked)} />파트너사 템플릿 사용</label>
           <label className="check"><input type="checkbox" checked={withHistory} onChange={(e) => setWithHistory(e.target.checked)} />문서 이력 관리 표 넣기</label>
         </div>
         {withHistory && (

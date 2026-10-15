@@ -269,6 +269,8 @@ class Export(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     guide_id: Mapped[int] = mapped_column(ForeignKey("guides.id", ondelete="CASCADE"), index=True)
+    # 로고·양식을 가져올 파트너사. 비어 있으면 원본 문서의 파트너사.
+    partner_id: Mapped[int | None] = mapped_column(ForeignKey("partners.id"))
     format: Mapped[str] = mapped_column(String(10))  # docx | pptx
     doc_version: Mapped[str] = mapped_column(String(50))
     include_logo: Mapped[bool] = mapped_column(Boolean, default=False)
