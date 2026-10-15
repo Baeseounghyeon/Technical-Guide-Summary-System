@@ -37,24 +37,27 @@ export default function CommunityPage() {
         </div>
       </section>
 
-      {closed.length > 0 && (
-        <section className="card">
-          <h2>다른 도메인 열람 신청</h2>
-          <p className="muted">다른 벤더 도메인은 기본적으로 볼 수 없습니다. 관리자가 승인하면 정해진 기간 동안 읽기만 할 수 있습니다.</p>
-          <div className="table-wrap">
-            <table>
-              <tbody>
-                {closed.map((d) => <RequestRow key={d.vendor_id} domain={d} />)}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      )}
-
-      {mine.data && mine.data.length > 0 && (
-        <section className="card">
-          <h2>내 열람 신청 기록</h2>
-          <div className="table-wrap">
+      {(closed.length > 0 || !!mine.data?.length) && (
+        <section className="card" id="access" style={{ scrollMarginTop: 80 }}>
+          <h2>다른 도메인 권한</h2>
+          <p className="muted">
+            다른 벤더 도메인은 기본적으로 볼 수 없습니다. 사유를 적어 신청하면 관리자가 기간 한정 읽기 전용 또는 정식 소속으로 승인합니다.
+          </p>
+          {closed.length > 0 ? (
+            <div className="table-wrap">
+              <table>
+                <tbody>
+                  {closed.map((d) => <RequestRow key={d.vendor_id} domain={d} />)}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="muted">신청할 수 있는 다른 도메인이 없습니다.</p>
+          )}
+          {!!mine.data?.length && (
+          <details>
+            <summary>신청 기록 {mine.data.length}건</summary>
+          <div className="table-wrap" style={{ marginTop: 10 }}>
             <table>
               <thead><tr><th>도메인</th><th>신청일</th><th>사유</th><th>상태</th><th>처리</th></tr></thead>
               <tbody>
@@ -79,6 +82,8 @@ export default function CommunityPage() {
               </tbody>
             </table>
           </div>
+          </details>
+          )}
         </section>
       )}
     </>

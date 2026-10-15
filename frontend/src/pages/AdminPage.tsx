@@ -1,17 +1,16 @@
-import { useState, type FormEvent } from "react";
+import { Fragment, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { GRANT_STATUS, ROLE_LABELS } from "../labels";
-import type { AccessGrant, AdminUser, Partner, Role, User, Vendor } from "../types";
+import type { AccessGrant, AdminUser, Partner, Role, Vendor } from "../types";
 
 export default function AdminPage() {
   return (
     <>
       <div className="page-header">
         <h1>관리자</h1>
-        <p className="muted">가입 승인, 파트너사와 벤더 도메인을 관리합니다.</p>
+        <p className="muted">가입자 승인과 소속·권한, 다른 도메인 권한 신청, 파트너사와 벤더 도메인을 관리합니다.</p>
       </div>
-      <PendingUsers />
       <Members />
       <AccessRequests />
       <PartnersAndVendors />
@@ -26,14 +25,21 @@ function Members() {
     queryKey: ["admin", "users", "all", statusFilter],
     queryFn: () => api<AdminUser[]>(`/admin/users${statusFilter ? `?status=${statusFilter}` : ""}`),
   });
+  const partners = useQuery({ queryKey: ["admin", "partners"], queryFn: () => api<Partner[]>("/admin/partners") });
+  const [editing, setEditing] = useState<number | null>(null);
   const keyword = q.trim().toLowerCase();
-  const shown = (users.data ?? []).filter(
-    (u) => !keyword || [u.name, u.email, u.partner_name, u.company_name].some((v) => v?.toLowerCase().includes(keyword)),
-  );
+  // 승인 대기자를 맨 위로
+  const shown = (users.data ?? [])
+    .filter((u) => !keyword || [u.name, u.email, u.partner_name, u.company_name].some((v) => v?.toLowerCase().includes(keyword)))
+    .sort((a, b) => Number(b.status === "pending") - Number(a.status === "pending"));
+  const pendingCount = (users.data ?? []).filter((u) => u.status === "pending").length;
 
   return (
     <section className="card">
-      <h2>가입자</h2>
+      <div className="summary-head">
+        <h2 style={{ margin: 0 }}>가입자</h2>
+        {pendingCount > 0 && <span className="badge pending">승인 대기 {pendingCount}명</span>}
+      </div>
       <div className="form-row" style={{ marginBottom: 8 }}>
         <label>검색 (이름·메일·회사)<input value={q} onChange={(e) => setQ(e.target.value)} /></label>
         <label style={{ flex: "0 0 160px" }}>
@@ -48,18 +54,19 @@ function Members() {
       </div>
       <p className="muted">{shown.length}명</p>
       <div className="table-wrap">
-        <table>
+        <table style={{ minWidth: 1040 }}>
           <thead>
-            <tr><th>이름</th><th>가입 일시</th><th>메일</th><th>전화번호</th><th>소속</th><th>할당된 도메인</th><th>권한</th><th>상태</th></tr>
+            <tr><th>이름</th><th>가입 일시</th><th>메일</th><th>전화번호</th><th>소속</th><th>할당된 도메인</th><th>권한</th><th>상태</th><th /></tr>
           </thead>
           <tbody>
             {shown.map((u) => (
-              <tr key={u.id}>
+              <Fragment key={u.id}>
+              <tr className={u.status === "pending" ? "highlight" : ""}>
                 <td style={{ whiteSpace: "nowrap" }}>{u.name}</td>
                 <td style={{ whiteSpace: "nowrap" }}>{new Date(u.created_at).toLocaleString()}</td>
                 <td>{u.email}</td>
                 <td style={{ whiteSpace: "nowrap" }}>{u.phone || "-"}</td>
-                <td>
+                <td style={{ minWidth: 120 }}>
                   {u.partner_name ?? <span className="muted">미지정</span>}
                   {(u.department || (!u.partner_name && u.company_name)) && (
                     <div className="muted">{[u.department, !u.partner_name && u.company_name ? `신청: ${u.company_name}` : null].filter(Boolean).join(" · ")}</div>
@@ -81,9 +88,24 @@ function Members() {
                     </div>
                   )}
                 </td>
-                <td style={{ whiteSpace: "nowrap" }}>{ROLE_LABELS[u.role]}</td>
+                <td style={{ whiteSpace: "nowrap" }}>{u.status === "pending" ? <span className="muted">-</span> : ROLE_LABELS[u.role]}</td>
                 <td><span className={`badge ${u.status}`}>{USER_STATUS[u.status]}</span></td>
+                <td style={{ whiteSpace: "nowrap" }}>
+                  {editing !== u.id && (
+                    <button className={u.status === "pending" ? "primary" : "link"} onClick={() => setEditing(u.id)}>
+                      {u.status === "pending" ? "승인하기" : "소속·권한 변경"}
+                    </button>
+                  )}
+                </td>
               </tr>
+              {editing === u.id && (
+                <tr className={u.status === "pending" ? "highlight" : ""}>
+                  <td colSpan={9}>
+                    <AssignForm user={u} partners={partners.data ?? []} onDone={() => setEditing(null)} />
+                  </td>
+                </tr>
+              )}
+              </Fragment>
             ))}
           </tbody>
         </table>
@@ -108,7 +130,7 @@ function AccessRequests() {
   return (
     <section className="card">
       <div className="summary-head">
-        <h2 style={{ margin: 0 }}>타 도메인 열람 신청</h2>
+        <h2 style={{ margin: 0 }}>다른 도메인 권한 신청</h2>
         <label className="check"><input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} />처리한 신청도 보기</label>
       </div>
       <p className="muted">
@@ -198,60 +220,44 @@ function AccessRequestRow({ grant, onDone }: { grant: AccessGrant; onDone: () =>
   );
 }
 
-function PendingUsers() {
-  const users = useQuery({ queryKey: ["admin", "users", "pending"], queryFn: () => api<User[]>("/admin/users?status=pending") });
-  const partners = useQuery({ queryKey: ["admin", "partners"], queryFn: () => api<Partner[]>("/admin/partners") });
-
-  return (
-    <section className="card">
-      <h2>가입 승인 대기</h2>
-      {users.data?.length === 0 && <p className="muted">대기 중인 신청이 없습니다.</p>}
-      <div className="table-wrap">
-        <table>
-          <tbody>
-            {users.data?.map((u) => <PendingRow key={u.id} user={u} partners={partners.data ?? []} />)}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  );
-}
-
-function PendingRow({ user, partners }: { user: User; partners: Partner[] }) {
+/** 가입 승인 또는 소속·권한 변경 (같은 승인 API 를 쓴다). */
+function AssignForm({ user, partners, onDone }: { user: AdminUser; partners: Partner[]; onDone: () => void }) {
   const queryClient = useQueryClient();
-  // 사용자가 고르기 전에는 신청 회사명과 같은 파트너사를 제안한다 (목록이 늦게 와도 반영되도록 매번 계산).
+  // 고르기 전에는 현재 소속 → 신청 회사명과 같은 파트너사 순으로 제안한다 (목록이 늦게 와도 반영되도록 매번 계산).
   const [chosen, setPartnerId] = useState<number | "" | undefined>(undefined);
-  const partnerId = chosen ?? partners.find((p) => p.name === user.company_name)?.id ?? "";
-  const [role, setRole] = useState<Role>("engineer");
-  const approve = useMutation({
+  const partnerId = chosen ?? user.partner_id ?? partners.find((p) => p.name === user.company_name)?.id ?? "";
+  const [role, setRole] = useState<Role>(user.status === "pending" ? "engineer" : user.role);
+  const save = useMutation({
     mutationFn: () =>
-      api(`/admin/users/${user.id}/approve`, {
-        method: "POST",
-        json: { partner_id: partnerId === "" ? null : partnerId, role },
-      }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin", "users"] }),
+      api(`/admin/users/${user.id}/approve`, { method: "POST", json: { partner_id: partnerId === "" ? null : partnerId, role } }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin"] });
+      onDone();
+    },
   });
+  const pending = user.status === "pending";
 
   return (
-    <tr>
-      <td>
-        <strong>{user.name}</strong> <span className="muted">{user.email}</span>
-        <div className="muted">신청 회사: {user.company_name} · {user.department ?? "-"} · {user.phone ?? "-"}</div>
-        {approve.error && <div className="error">{approve.error.message}</div>}
-      </td>
-      <td>
+    <div className="form-row">
+      <label>
+        소속 파트너사
         <select value={partnerId} onChange={(e) => setPartnerId(Number(e.target.value) || "")}>
-          <option value="">파트너사 선택</option>
-          {partners.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          <option value="">{role === "platform_admin" ? "(없음)" : "파트너사 선택"}</option>
+          {partners.map((p) => <option key={p.id} value={p.id}>{p.name} {p.vendors.length ? `(${p.vendors.map((v) => v.name).join(", ")})` : "(도메인 없음)"}</option>)}
         </select>
-      </td>
-      <td>
+      </label>
+      <label style={{ flex: "0 0 180px" }}>
+        권한
         <select value={role} onChange={(e) => setRole(e.target.value as Role)}>
           {Object.entries(ROLE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </select>
-      </td>
-      <td><button className="primary" disabled={approve.isPending} onClick={() => approve.mutate()}>승인</button></td>
-    </tr>
+      </label>
+      <div className="actions">
+        <button className="primary" disabled={save.isPending} onClick={() => save.mutate()}>{pending ? "승인" : "변경 저장"}</button>
+        <button onClick={onDone}>취소</button>
+      </div>
+      {save.error && <p className="error" style={{ flexBasis: "100%" }}>{save.error.message}</p>}
+    </div>
   );
 }
 

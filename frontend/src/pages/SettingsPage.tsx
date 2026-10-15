@@ -9,8 +9,8 @@ type AssetKind = "logo" | "docx_template" | "pptx_template";
 
 const ASSETS: { kind: AssetKind; label: string; accept: string; hint: string }[] = [
   { kind: "logo", label: "로고", accept: ".png,.jpg,.jpeg", hint: "PNG, JPG" },
-  { kind: "docx_template", label: "Word 템플릿", accept: ".docx,.dotx", hint: ".docx, .dotx" },
-  { kind: "pptx_template", label: "PPT 템플릿", accept: ".pptx,.potx", hint: ".pptx, .potx" },
+  { kind: "docx_template", label: "Word 양식", accept: ".docx,.dotx", hint: ".docx, .dotx" },
+  { kind: "pptx_template", label: "PowerPoint 양식", accept: ".pptx,.potx", hint: ".pptx, .potx" },
 ];
 
 export default function SettingsPage() {
@@ -45,9 +45,9 @@ function PartnerAssets() {
   });
 
   return (
-    <section className="card">
-      <h2>파트너사 로고 · 템플릿</h2>
-      <p className="muted">최종 문서를 만들 때 "파트너사 로고 넣기", "파트너사 템플릿 사용"을 선택하면 여기 등록한 파일이 쓰입니다.</p>
+    <section className="card" id="logo" style={{ scrollMarginTop: 80 }}>
+      <h2>파트너사 로고 · 양식</h2>
+      <p className="muted">최종 문서를 만들 때 "표지에 로고 넣기", "파트너 양식 사용"을 선택하면 여기 등록한 파일이 쓰입니다. 양식 파일 안의 기존 내용은 지워지고 디자인만 쓰입니다.</p>
       {isPlatformAdmin && (
         <div className="form-row">
           <label>
