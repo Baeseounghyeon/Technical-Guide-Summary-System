@@ -310,8 +310,8 @@ function HistoryCard({ id }: { id: number }) {
               {history.data?.map((h) => (
                 <tr key={h.id}>
                   <td>{new Date(h.created_at).toLocaleString()}</td>
-                  <td>{h.user_name}</td>
-                  <td>{LOG_ACTION[h.action]}</td>
+                  <td style={{ whiteSpace: "nowrap" }}>{h.user_name}</td>
+                  <td style={{ whiteSpace: "nowrap" }}>{LOG_ACTION[h.action]}</td>
                   <td>{h.before_text}</td>
                   <td>{h.after_text ?? "-"}</td>
                   <td>{h.reason}{h.note && <div className="muted">메모: {h.note}</div>}</td>

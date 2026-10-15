@@ -1,3 +1,4 @@
+import math
 import re
 from difflib import SequenceMatcher
 
@@ -98,7 +99,10 @@ def _tech_tokens(text: str) -> set[str]:
 def _match_score(p: TocEntry, v: TocEntry) -> float:
     title = SequenceMatcher(None, _NUMBERING.sub("", p.title).lower(), _NUMBERING.sub("", v.title).lower()).ratio()
     pt, vt = _tech_tokens(p.title + " " + p.excerpt), _tech_tokens(v.title + " " + v.excerpt)
-    overlap = len(pt & vt) / len(pt | vt) if pt and vt else 0.0
+    if not (pt and vt):
+        return title
+    # 코사인 유사도: 한쪽 본문이 길어도 크게 불리하지 않고, 토큰 하나만 겹치는 짧은 항목에 과하게 끌리지 않는다.
+    overlap = len(pt & vt) / math.sqrt(len(pt) * len(vt))
     return max(title, 0.4 * title + 0.6 * overlap * 2)
 
 
