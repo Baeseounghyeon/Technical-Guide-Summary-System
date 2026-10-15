@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# 비밀 설정
+.env
+
+# 실행 중 생성되는 데이터 (DB, 업로드 파일, 생성 문서)
+backend/data/
+backend/storage/
+
+# Frontend
+node_modules/
+frontend/dist/
+*.tsbuildinfo
+
+# OS / 에디터
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
