@@ -9,20 +9,16 @@
   --border: #e2e8f0;
   --border-strong: #cbd5e1;
 
-  /* unipoint 로고 색: 파란색(#4456a5) 주색 + 주황색(#e87e00) 포인트 */
+  /* unipoint 로고 파란색(#4456a5)을 주색으로. 진행·대기 표시도 파란 계열로 통일 */
   --accent: #4456a5;
   --accent-hover: #36468b;
   --accent-soft: #eceffa;
   --accent-text: #ffffff;
-  --orange: #e87e00;
-  --orange-hover: #cc6e00;
-  --orange-soft: #fff4e6;
-  --orange-text: #b05f00;
 
   --ok: #059669;
   --ok-soft: #ecfdf5;
-  --warn: var(--orange-text);
-  --warn-soft: var(--orange-soft);
+  --warn: var(--accent);
+  --warn-soft: var(--accent-soft);
   --danger: #dc2626;
   --danger-soft: #fef2f2;
   --neutral-soft: #f1f5f9;
@@ -55,7 +51,7 @@ h3 { font-size: 1rem; margin: 0; }
   border-bottom: 1px solid var(--border);
 }
 .topbar .brand { display: flex; align-items: center; flex-shrink: 0; }
-.topbar .brand img { height: 30px; width: auto; display: block; }
+.topbar .brand img { height: 22px; width: auto; display: block; }
 .topbar-right { display: flex; align-items: center; gap: 10px; }
 .icon-button {
   position: relative; width: 38px; height: 38px; padding: 0; display: grid; place-items: center;
@@ -63,13 +59,13 @@ h3 { font-size: 1rem; margin: 0; }
 }
 .icon-button .count {
   position: absolute; top: -4px; right: -4px; min-width: 18px; height: 18px; padding: 0 5px;
-  border-radius: 999px; background: var(--orange); color: #fff; font-size: 0.68rem; font-weight: 700;
+  border-radius: 999px; background: var(--accent); color: #fff; font-size: 0.68rem; font-weight: 700;
   display: grid; place-items: center; border: 2px solid var(--surface);
 }
 .dropdown.notifications { width: 360px; max-height: 480px; overflow-y: auto; }
 .notif-head { display: flex; justify-content: space-between; align-items: center; }
 .notif { border-radius: var(--radius-sm); padding: 2px; }
-.notif.unread { background: var(--orange-soft); }
+.notif.unread { background: var(--accent-soft); }
 .notif + .notif { margin-top: 4px; }
 .notif-main {
   display: grid; gap: 3px; width: 100%; text-align: left; border: none; background: none; padding: 10px 12px;
@@ -191,16 +187,18 @@ tr.highlight td { background: var(--warn-soft); }
 .progress > div { height: 100%; background: linear-gradient(90deg, #3b82f6, var(--accent)); transition: width 0.3s; }
 
 /* ---------- 대시보드 ---------- */
-.dashboard-head { display: flex; justify-content: space-between; align-items: end; gap: 16px; flex-wrap: wrap; }
+.intro { margin-bottom: 28px; max-width: 760px; }
+.intro .lead { margin: 8px 0 0; color: var(--text-2); font-size: 0.98rem; line-height: 1.7; }
+.intro .provider { margin: 10px 0 0; color: var(--accent); font-size: 0.85rem; font-weight: 600; }
+.section-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; }
+.section-head h2 { margin: 0; }
+.button-link.small { padding: 6px 12px; font-size: 0.85rem; }
 .button-link {
   display: inline-flex; align-items: center; padding: 9px 16px; border-radius: var(--radius-sm);
   font-weight: 600; border: 1px solid var(--border-strong); background: var(--surface); color: var(--text-2);
 }
 .button-link.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
 .button-link.primary:hover { background: var(--accent-hover); color: var(--accent-text); text-decoration: none; }
-/* 화면에서 가장 중요한 행동 하나에만 쓰는 주황 버튼 */
-.button-link.cta, button.cta { background: var(--orange); border-color: var(--orange); color: #fff; }
-.button-link.cta:hover, button.cta:hover:not(:disabled) { background: var(--orange-hover); border-color: var(--orange-hover); color: #fff; text-decoration: none; }
 .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 14px; margin-bottom: 18px; }
 .stat-card {
   display: grid; gap: 4px; text-align: left; padding: 18px 20px; border-radius: var(--radius);
@@ -211,7 +209,7 @@ button.stat-card:hover:not(:disabled) { background: var(--surface); border-color
 .stat-card.selected { outline: 2px solid var(--tone); outline-offset: -1px; }
 .stat-card.tone-accent { --tone: var(--accent); }
 .stat-card.tone-ok { --tone: var(--ok); }
-.stat-card.tone-warn { --tone: var(--orange); }
+.stat-card.tone-warn { --tone: #7c8db5; }
 .stat-card.tone-danger { --tone: var(--danger); }
 .stat-card.tone-plain { --tone: #94a3b8; }
 .stat-label { font-size: 0.85rem; color: var(--muted); font-weight: 600; }
@@ -226,10 +224,10 @@ button.stat-card:hover:not(:disabled) { background: var(--surface); border-color
 .summary-item { border-left: 4px solid var(--border-strong); }
 .summary-item.approved { border-left-color: var(--ok); }
 .summary-item.failed { border-left-color: var(--danger); }
-.summary-item.draft { border-left-color: var(--orange); }
+.summary-item.draft { border-left-color: var(--accent); }
 .summary-head { display: flex; justify-content: space-between; gap: 12px; align-items: start; margin-bottom: 10px; }
 .summary-body { white-space: pre-wrap; line-height: 1.7; font-size: 0.925rem; color: var(--text-2); }
-.warnings { background: var(--warn-soft); border: 1px solid #fed7aa; border-radius: var(--radius-sm); padding: 10px 14px; margin-top: 10px; font-size: 0.875rem; }
+.warnings { background: var(--danger-soft); border: 1px solid #fecaca; border-radius: var(--radius-sm); padding: 10px 14px; margin-top: 10px; font-size: 0.875rem; }
 .warnings ul, .steps { margin: 4px 0 0; padding-left: 20px; }
 .revisions { font-size: 0.85rem; margin-top: 8px; }
 .revisions li { margin-bottom: 8px; }
@@ -238,7 +236,7 @@ button.stat-card:hover:not(:disabled) { background: var(--surface); border-color
 .link-like { color: var(--accent); font-weight: 500; }
 
 /* ---------- 2단계: 파트너 가이드 검토 ---------- */
-.finding { border-left: 4px solid var(--orange); }
+.finding { border-left: 4px solid var(--accent); }
 .finding.accepted { border-left-color: var(--ok); }
 .finding.rejected { border-left-color: var(--border-strong); opacity: 0.85; }
 .diff { display: grid; gap: 6px; margin: 10px 0; font-size: 0.9rem; }

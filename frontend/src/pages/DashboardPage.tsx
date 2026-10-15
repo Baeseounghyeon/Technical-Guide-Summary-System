@@ -2,7 +2,6 @@
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../api";
-import { useAuth } from "../auth";
 import { languageLabel } from "../labels";
 import type { DashboardData, DocumentStage } from "../types";
 
@@ -19,7 +18,6 @@ const STAGES: Record<DocumentStage, { label: string; badge: string; group: "done
 type Filter = "all" | "done" | "progress" | "failed";
 
 export default function DashboardPage() {
-  const { me } = useAuth();
   const [filter, setFilter] = useState<Filter>("all");
   const data = useQuery({
     queryKey: ["dashboard"],
@@ -39,12 +37,18 @@ export default function DashboardPage() {
 
   return (
     <>
-      <div className="page-header dashboard-head">
-        <div>
-          <h1>{me?.name}님, 안녕하세요</h1>
-          <p className="muted">내가 올린 벤더 기술 문서의 처리 현황입니다.</p>
-        </div>
-        <Link to="/documents" className="button-link cta">+ 새 문서 올리기</Link>
+      <div className="page-header intro">
+        <h1>벤더 기술 가이드 요약</h1>
+        <p className="lead">
+          수백 쪽에 이르는 벤더 기술 문서를 목차별 핵심 내용으로 요약·번역하고, 검토를 거쳐 파트너사 양식의 Word·PowerPoint 문서로
+          만들어 드립니다. 같은 벤더를 지원하는 파트너사와 가이드와 경험을 나눌 수도 있습니다.
+        </p>
+        <p className="provider">유니포인트(unipoint)가 제공하는 서비스입니다.</p>
+      </div>
+
+      <div className="section-head">
+        <h2>내 처리 현황</h2>
+        <Link to="/documents" className="button-link primary small">+ 새 문서 올리기</Link>
       </div>
 
       <div className="stat-grid">
