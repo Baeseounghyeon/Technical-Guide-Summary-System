@@ -7,7 +7,9 @@ import DocumentPage from "./pages/DocumentPage";
 import DocumentsPage from "./pages/DocumentsPage";
 import GuidePage from "./pages/GuidePage";
 import LoginPage from "./pages/LoginPage";
+import SettingsPage from "./pages/SettingsPage";
 import SignupPage from "./pages/SignupPage";
+import type { Role } from "./types";
 
 export default function App() {
   return (
@@ -17,17 +19,20 @@ export default function App() {
       <Route path="/" element={<Protected><DocumentsPage /></Protected>} />
       <Route path="/documents/:id" element={<Protected><DocumentPage /></Protected>} />
       <Route path="/guides/:id" element={<Protected><GuidePage /></Protected>} />
-      <Route path="/admin" element={<Protected admin><AdminPage /></Protected>} />
+      <Route path="/admin" element={<Protected roles={["platform_admin"]}><AdminPage /></Protected>} />
+      <Route path="/settings" element={<Protected roles={SETTINGS_ROLES}><SettingsPage /></Protected>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 }
 
-function Protected({ children, admin }: { children: ReactNode; admin?: boolean }) {
+const SETTINGS_ROLES: Role[] = ["platform_admin", "partner_admin"];
+
+function Protected({ children, roles }: { children: ReactNode; roles?: Role[] }) {
   const { me, loading, logout } = useAuth();
   if (loading) return <p className="page">불러오는 중…</p>;
   if (!me) return <Navigate to="/login" replace />;
-  if (admin && me.role !== "platform_admin") return <Navigate to="/" replace />;
+  if (roles && !roles.includes(me.role)) return <Navigate to="/" replace />;
 
   return (
     <>
@@ -35,6 +40,7 @@ function Protected({ children, admin }: { children: ReactNode; admin?: boolean }
         <Link to="/" className="brand">기술 가이드 요약</Link>
         <nav>
           <NavLink to="/" end>문서</NavLink>
+          {SETTINGS_ROLES.includes(me.role) && <NavLink to="/settings">설정</NavLink>}
           {me.role === "platform_admin" && <NavLink to="/admin">관리자</NavLink>}
         </nav>
         <span className="who">

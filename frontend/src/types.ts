@@ -33,6 +33,13 @@ export interface Partner {
   vendors: Vendor[];
 }
 
+export interface GlossaryTerm {
+  id: number;
+  target_language: string;
+  source_term: string;
+  target_term: string;
+}
+
 export interface DocumentSummary {
   id: number;
   vendor_id: number;

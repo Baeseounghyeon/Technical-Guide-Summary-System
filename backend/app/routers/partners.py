@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from ..config import settings
@@ -22,11 +23,22 @@ ALLOWED = {
     "docx_template": {".docx", ".dotx"},
     "pptx_template": {".pptx", ".potx"},
 }
+LOGO_MEDIA_TYPES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg"}
 
 
 @router.get("/{partner_id}", response_model=PartnerOut)
 def get_partner(partner_id: int, user: User = Depends(get_active_user), db: Session = Depends(get_db)) -> Partner:
     return _partner_for(db, user, partner_id, manage=False)
+
+
+@router.get("/{partner_id}/logo")
+def get_logo(partner_id: int, user: User = Depends(get_active_user), db: Session = Depends(get_db)) -> FileResponse:
+    """설정 화면 미리보기용. 해당 파트너사 소속이면 누구나 볼 수 있다."""
+    partner = _partner_for(db, user, partner_id, manage=False)
+    path = Path(partner.logo_path) if partner.logo_path else None
+    if path is None or not path.is_file():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "등록된 로고가 없습니다.")
+    return FileResponse(path, media_type=LOGO_MEDIA_TYPES.get(path.suffix.lower(), "application/octet-stream"))
 
 
 @router.post("/{partner_id}/assets/{kind}", response_model=PartnerOut)

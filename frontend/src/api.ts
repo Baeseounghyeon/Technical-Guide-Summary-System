@@ -64,6 +64,11 @@ export async function api<T>(path: string, init: ApiInit = {}): Promise<T> {
   return (res.status === 204 ? undefined : await res.json()) as T;
 }
 
+/** 인증 헤더가 필요한 파일을 Blob 으로 받는다 (이미지 미리보기 등). */
+export async function fetchBlob(path: string): Promise<Blob> {
+  return (await request(path)).blob();
+}
+
 /** 인증 헤더가 필요한 파일 다운로드. */
 export async function download(path: string): Promise<void> {
   const res = await request(path);
