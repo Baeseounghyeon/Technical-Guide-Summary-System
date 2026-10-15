@@ -7,7 +7,7 @@
 | 항목 | 결정 |
 |---|---|
 | 제품 형태 | 웹 서비스 (멀티 테넌트) |
-| AI 모델 | Claude API (`claude-opus-5-5`), API 키 발급 전까지는 가짜(Mock) 응답으로 개발 |
+| AI 모델 | 개인 사용 기간: 본인 Claude 구독 (Claude Code CLI 경유). 다른 사람에게 공개할 때: Claude API (`claude-opus-5-5`). 설정 하나로 전환 |
 | 입력 형식 | PDF, Word(.docx), PowerPoint(.pptx), 웹 문서 URL |
 | 문서 분량 | 한 건당 100~500쪽 → 목차 단위로 나눠 병렬 처리 |
 | 기술 스택 | 백엔드 Python(FastAPI), 프론트엔드 React(TypeScript) |

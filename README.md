@@ -63,7 +63,38 @@ API 문서: http://localhost:8000/docs
 cd backend; .\.venv\Scripts\python -m pytest -q
 ```
 
-## Claude API 연결
+## 실제 요약 엔진 연결
+
+`backend/.env`의 `LLM_PROVIDER`로 고릅니다. 바꾼 뒤에는 백엔드 서버를 재시작하세요.
+
+| 값 | 과금 | 용도 |
+|---|---|---|
+| `mock` | 없음 | 화면·흐름 개발용 가짜 요약 |
+| `claude_code` | 본인 Claude 구독 (Pro/Max) | **나 혼자 쓰는 동안** |
+| `claude` | Claude API 사용량 | 다른 사람에게 서비스할 때 |
+
+### 본인 구독으로 쓰기 (claude_code)
+
+1. Claude Code 명령줄 도구를 설치합니다 (관리자 권한 불필요).
+
+```bash
+irm https://claude.ai/install.ps1 | iex
+```
+
+2. 새 PowerShell 창을 열고 `claude` 를 실행합니다. 브라우저가 열리면 구독 계정으로 로그인하고, `Login successful` 이 보이면 Enter 를 누른 뒤 `/exit` 로 나옵니다.
+3. `backend/.env` 에서 `LLM_PROVIDER=claude_code`, `LLM_CONCURRENCY=2` 로 바꿉니다.
+4. 연결을 확인합니다. CLI 위치, 로그인 방식(`claude.ai` 여야 구독), 짧은 요약 결과가 출력됩니다.
+
+```bash
+cd backend; .\.venv\Scripts\python -m app.services.llm.claude_code
+```
+
+알아둘 점
+- 요약 한 건마다 구독 사용량이 차감됩니다. 500쪽 문서는 수십 번 호출되므로 한도에 닿으면 해당 섹션이 "실패"로 표시되고, 한도가 풀린 뒤 "코멘트로 재생성"으로 다시 돌리면 됩니다. 사용량을 아끼려면 `CLAUDE_CODE_MODEL=sonnet`.
+- 환경 변수 `ANTHROPIC_API_KEY` 가 있으면 Claude Code가 구독 대신 API 키를 쓰므로, 엔진이 실행할 때 자동으로 제외합니다.
+- 구독 로그인은 **본인 PC에서 본인 문서를 처리할 때만** 씁니다. 다른 사람이 이 서비스를 쓰게 되면 Anthropic 약관상 API 키(`claude`)로 바꿔야 합니다.
+
+### Claude API로 쓰기 (claude)
 
 API 키를 발급받은 뒤 `backend/.env`에서 다음 두 줄을 바꾸고 서버를 재시작합니다. 키는 채팅이나 저장소에 올리지 마세요.
 

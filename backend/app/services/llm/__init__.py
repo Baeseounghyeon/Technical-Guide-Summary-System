@@ -7,6 +7,10 @@ def get_provider() -> LLMProvider:
         from .claude import ClaudeProvider
 
         return ClaudeProvider()
+    if settings.llm_provider == "claude_code":
+        from .claude_code import ClaudeCodeProvider
+
+        return ClaudeCodeProvider()
     from .mock import MockProvider
 
     return MockProvider()
