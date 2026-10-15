@@ -140,3 +140,85 @@ export interface ExportItem {
   error: string | null;
   created_at: string;
 }
+
+// ---- 2단계: 파트너 가이드 비교 ----
+
+export type PartnerGuideStatus = "uploaded" | "parsing" | "matched" | "comparing" | "reviewing" | "failed";
+export type FindingStatus = "open" | "accepted" | "rejected";
+
+export interface PartnerGuide {
+  id: number;
+  guide_id: number;
+  title: string | null;
+  source_type: "pdf" | "docx" | "pptx";
+  status: PartnerGuideStatus;
+  error: string | null;
+  progress_current: number;
+  progress_total: number;
+  created_at: string;
+}
+
+export interface PartnerSection {
+  id: number;
+  order_index: number;
+  level: number;
+  title: string;
+  page_start: number | null;
+  page_end: number | null;
+  char_count: number;
+  matched_section_id: number | null;
+  matched_title: string | null;
+  match_method: "auto" | "manual" | null;
+}
+
+export interface Finding {
+  id: number;
+  partner_section_id: number;
+  partner_section_title: string;
+  vendor_section_title: string | null;
+  vendor_page_start: number | null;
+  category: string;
+  severity: "high" | "medium" | "low";
+  before_text: string;
+  after_text: string;
+  reason: string;
+  evidence: string;
+  locatable: boolean;
+  status: FindingStatus;
+  final_text: string | null;
+  decision_note: string | null;
+  decided_by_name: string | null;
+  decided_at: string | null;
+}
+
+export interface PartnerGuideDetail extends PartnerGuide {
+  vendor_name: string;
+  vendor_document_title: string | null;
+  target_language: string;
+  sections: PartnerSection[];
+  vendor_sections: { id: number; title: string; level: number }[];
+  findings: Finding[];
+  counts: { total: number; open: number; accepted: number; rejected: number };
+}
+
+export interface CorrectionLog {
+  id: number;
+  finding_id: number;
+  action: "accepted" | "rejected" | "reopened";
+  before_text: string;
+  after_text: string | null;
+  reason: string;
+  note: string | null;
+  user_name: string;
+  created_at: string;
+}
+
+export interface CorrectionExport {
+  id: number;
+  kind: "tracked" | "report";
+  status: "queued" | "done" | "failed";
+  applied_count: number;
+  skipped_count: number;
+  error: string | null;
+  created_at: string;
+}

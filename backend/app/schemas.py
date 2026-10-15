@@ -243,3 +243,110 @@ class ExportOut(ORM):
     status: str
     error: str | None
     created_at: UTCDateTime
+
+
+# ---- 2단계: 파트너 가이드 비교 ----
+
+
+class PartnerGuideOut(ORM):
+    id: int
+    guide_id: int
+    title: str | None
+    source_type: str
+    status: str
+    error: str | None
+    progress_current: int
+    progress_total: int
+    created_at: UTCDateTime
+
+
+class PartnerSectionOut(BaseModel):
+    id: int
+    order_index: int
+    level: int
+    title: str
+    page_start: int | None
+    page_end: int | None
+    char_count: int
+    matched_section_id: int | None
+    matched_title: str | None
+    match_method: str | None
+
+
+class VendorSectionOption(BaseModel):
+    id: int
+    title: str
+    level: int
+
+
+class FindingOut(BaseModel):
+    id: int
+    partner_section_id: int
+    partner_section_title: str
+    vendor_section_title: str | None
+    vendor_page_start: int | None
+    category: str
+    severity: str
+    before_text: str
+    after_text: str
+    reason: str
+    evidence: str
+    locatable: bool
+    status: str
+    final_text: str | None
+    decision_note: str | None
+    decided_by_name: str | None
+    decided_at: UTCDateTime | None
+
+
+class FindingCounts(BaseModel):
+    total: int
+    open: int
+    accepted: int
+    rejected: int
+
+
+class PartnerGuideDetail(PartnerGuideOut):
+    vendor_name: str
+    vendor_document_title: str | None
+    target_language: str
+    sections: list[PartnerSectionOut]
+    vendor_sections: list[VendorSectionOption]
+    findings: list[FindingOut]
+    counts: FindingCounts
+
+
+class MatchPatch(BaseModel):
+    matched_section_id: int | None
+
+
+class DecisionIn(BaseModel):
+    action: Literal["accept", "reject", "reopen"]
+    final_text: str | None = None  # 수락 시 제안 문구 대신 반영할 문구
+    note: str | None = None  # 판단 메모 (거절 시 필수)
+
+
+class CorrectionLogOut(BaseModel):
+    id: int
+    finding_id: int
+    action: str
+    before_text: str
+    after_text: str | None
+    reason: str
+    note: str | None
+    user_name: str
+    created_at: UTCDateTime
+
+
+class CorrectionExportCreate(BaseModel):
+    kind: Literal["tracked", "report"]
+
+
+class CorrectionExportOut(ORM):
+    id: int
+    kind: str
+    status: str
+    applied_count: int
+    skipped_count: int
+    error: str | None
+    created_at: UTCDateTime

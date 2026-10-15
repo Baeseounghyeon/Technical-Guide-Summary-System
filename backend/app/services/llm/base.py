@@ -61,7 +61,47 @@ class OverviewInput:
     sections: list[tuple[str, str]]  # (제목, 요약)
 
 
+@dataclass
+class TocEntry:
+    """목차 매칭에 쓰는 항목. key 는 호출하는 쪽이 정한 식별자."""
+
+    key: int
+    title: str
+    excerpt: str
+
+
+FINDING_CATEGORIES = ("wrong_value", "wrong_command", "missing_step", "wrong_order", "missing_warning", "contradiction", "outdated")
+SEVERITIES = ("high", "medium", "low")
+
+
+@dataclass
+class CompareInput:
+    vendor: str
+    target_language: str  # 사유(reason)를 쓸 언어
+    partner_title: str
+    partner_text: str
+    vendor_title: str
+    vendor_text: str  # 판단 근거가 되는 벤더 원본
+    summary_text: str  # 승인된 요약 (참고용)
+
+
+@dataclass
+class FindingResult:
+    category: str
+    severity: str
+    before: str  # 파트너 원문에 그대로 있는 문구
+    after: str
+    reason: str
+    evidence: str  # 벤더 원본 인용
+
+
 class LLMProvider(Protocol):
     async def summarize_section(self, item: SectionInput) -> SectionResult: ...
 
     async def summarize_overview(self, item: OverviewInput) -> str: ...
+
+    async def match_sections(self, partner: list[TocEntry], vendor: list[TocEntry]) -> dict[int, int | None]:
+        """파트너 목차 key → 대응하는 벤더 목차 key (없으면 None)."""
+        ...
+
+    async def compare_section(self, item: CompareInput) -> list[FindingResult]: ...

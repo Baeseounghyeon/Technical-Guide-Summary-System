@@ -5,8 +5,29 @@ import json
 from anthropic import AsyncAnthropic
 
 from ...config import settings
-from .base import LLMError, OverviewInput, SectionInput, SectionResult
-from .prompts import OVERVIEW_SCHEMA, SECTION_SCHEMA, SYSTEM_PROMPT, glossary_text, overview_prompt, section_prompt
+from .base import (
+    CompareInput,
+    FindingResult,
+    LLMError,
+    OverviewInput,
+    SectionInput,
+    SectionResult,
+    TocEntry,
+)
+from .prompts import (
+    COMPARE_SCHEMA,
+    MATCH_SCHEMA,
+    OVERVIEW_SCHEMA,
+    REVIEW_SYSTEM_PROMPT,
+    SECTION_SCHEMA,
+    SYSTEM_PROMPT,
+    compare_prompt,
+    glossary_text,
+    match_prompt,
+    overview_prompt,
+    parse_matches,
+    section_prompt,
+)
 
 
 class ClaudeProvider:
@@ -26,10 +47,28 @@ class ClaudeProvider:
         data = await self._json_call(overview_prompt(item), OVERVIEW_SCHEMA, [], max_tokens=16000)
         return data["overview_markdown"]
 
+    async def match_sections(self, partner: list[TocEntry], vendor: list[TocEntry]) -> dict[int, int | None]:
+        data = await self._json_call(
+            match_prompt(partner, vendor), MATCH_SCHEMA, [], max_tokens=16000, system_prompt=REVIEW_SYSTEM_PROMPT
+        )
+        return parse_matches(data, partner, vendor)
+
+    async def compare_section(self, item: CompareInput) -> list[FindingResult]:
+        data = await self._json_call(
+            compare_prompt(item), COMPARE_SCHEMA, [], max_tokens=32000, system_prompt=REVIEW_SYSTEM_PROMPT
+        )
+        return [FindingResult(**f) for f in data["findings"]]
+
     async def _json_call(
-        self, user_content: str, schema: dict, glossary: list[tuple[str, str]], *, max_tokens: int
+        self,
+        user_content: str,
+        schema: dict,
+        glossary: list[tuple[str, str]],
+        *,
+        max_tokens: int,
+        system_prompt: str = SYSTEM_PROMPT,
     ) -> dict:
-        system: list[dict] = [{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}]
+        system: list[dict] = [{"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}]
         if terms := glossary_text(glossary):
             system.append({"type": "text", "text": terms, "cache_control": {"type": "ephemeral"}})
 

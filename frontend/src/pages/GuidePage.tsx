@@ -1,10 +1,10 @@
 import { useState, type FormEvent } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, download } from "../api";
 import { useAuth } from "../auth";
-import { ORIGIN_LABELS, STATUS_LABELS, languageLabel } from "../labels";
-import type { ExportItem, GuideDetail, GuideItem, Revision, RevisionInfo } from "../types";
+import { ORIGIN_LABELS, PARTNER_GUIDE_STATUS, STATUS_LABELS, languageLabel } from "../labels";
+import type { ExportItem, GuideDetail, GuideItem, PartnerGuide, Revision, RevisionInfo } from "../types";
 
 const BUSY = new Set(["pending", "generating"]);
 
@@ -63,7 +63,63 @@ export default function GuidePage() {
       )}
 
       <ExportPanel guide={g} />
+      <PartnerGuidesPanel guide={g} />
     </>
+  );
+}
+
+function PartnerGuidesPanel({ guide }: { guide: GuideDetail }) {
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const key = ["partner-guides", guide.id];
+  const list = useQuery({ queryKey: key, queryFn: () => api<PartnerGuide[]>(`/guides/${guide.id}/partner-guides`) });
+  const [file, setFile] = useState<File | null>(null);
+  const upload = useMutation({
+    mutationFn: () => {
+      const form = new FormData();
+      form.append("file", file!);
+      return api<PartnerGuide>(`/guides/${guide.id}/partner-guides`, { method: "POST", body: form });
+    },
+    onSuccess: (pg) => {
+      queryClient.invalidateQueries({ queryKey: key });
+      navigate(`/partner-guides/${pg.id}`);
+    },
+  });
+  const ready = guide.status === "approved";
+
+  return (
+    <section className="card">
+      <h2>파트너 가이드 비교</h2>
+      <p className="muted">
+        파트너사가 따로 만든 기술 가이드를 올리면 이 요약 가이드와 벤더 원본을 기준으로 오류를 찾습니다.
+        {!ready && " 모든 항목을 승인한 뒤에 사용할 수 있습니다."}
+      </p>
+      <form
+        className="form-row"
+        onSubmit={(e) => {
+          e.preventDefault();
+          upload.mutate();
+        }}
+      >
+        <label>
+          파트너 가이드 파일 (PDF, Word, PowerPoint)
+          <input type="file" accept=".pdf,.docx,.pptx" disabled={!ready} onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+        </label>
+        <button className="primary" disabled={!ready || !file || upload.isPending}>올리고 분석</button>
+      </form>
+      {upload.error && <p className="error">{upload.error.message}</p>}
+      {list.data && list.data.length > 0 && (
+        <ul>
+          {list.data.map((pg) => (
+            <li key={pg.id}>
+              <Link to={`/partner-guides/${pg.id}`}>{pg.title ?? `파트너 가이드 #${pg.id}`}</Link>{" "}
+              <span className={`badge ${pg.status}`}>{PARTNER_GUIDE_STATUS[pg.status]}</span>{" "}
+              <span className="muted">{new Date(pg.created_at).toLocaleDateString()}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 

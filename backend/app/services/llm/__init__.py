@@ -1,5 +1,14 @@
 from ...config import settings
-from .base import LLMError, LLMProvider, OverviewInput, SectionInput, SectionResult
+from .base import (
+    CompareInput,
+    FindingResult,
+    LLMError,
+    LLMProvider,
+    OverviewInput,
+    SectionInput,
+    SectionResult,
+    TocEntry,
+)
 
 
 def get_provider() -> LLMProvider:
@@ -16,4 +25,14 @@ def get_provider() -> LLMProvider:
     return MockProvider()
 
 
-__all__ = ["LLMError", "LLMProvider", "OverviewInput", "SectionInput", "SectionResult", "get_provider"]
+__all__ = [
+    "CompareInput",
+    "FindingResult",
+    "LLMError",
+    "LLMProvider",
+    "OverviewInput",
+    "SectionInput",
+    "SectionResult",
+    "TocEntry",
+    "get_provider",
+]

@@ -14,8 +14,24 @@ import subprocess
 from pathlib import Path
 
 from ...config import settings
-from .base import LLMError, OverviewInput, SectionInput, SectionResult
-from .prompts import OVERVIEW_SCHEMA, SECTION_SCHEMA, SYSTEM_PROMPT, glossary_text, overview_prompt, section_prompt
+from .base import CompareInput, FindingResult, LLMError, OverviewInput, SectionInput, SectionResult, TocEntry
+from .prompts import (
+    COMPARE_SCHEMA,
+    MATCH_SCHEMA,
+    OVERVIEW_SCHEMA,
+    REVIEW_SYSTEM_PROMPT,
+    SECTION_SCHEMA,
+    SYSTEM_PROMPT,
+    compare_prompt,
+    glossary_text,
+    match_prompt,
+    overview_prompt,
+    parse_matches,
+    section_prompt,
+)
+
+# 지시문 파일 이름 → 내용 (CLI 에 --system-prompt-file 로 넘긴다)
+_SYSTEM_PROMPTS = {"summarize": SYSTEM_PROMPT, "review": REVIEW_SYSTEM_PROMPT}
 
 # 이 변수들이 있으면 Claude Code가 구독 대신 API 키·클라우드 계정을 쓴다.
 # CLAUDECODE 등은 Claude Code 안에서 서버를 띄웠을 때 중첩 실행으로 오인되지 않도록 지운다.
@@ -54,9 +70,10 @@ def _work_dir() -> Path:
     """프로젝트 CLAUDE.md·설정을 읽지 않도록 빈 전용 폴더에서 실행한다."""
     path = settings.storage_dir / "claude-code"
     path.mkdir(parents=True, exist_ok=True)
-    prompt_file = path / "system-prompt.md"
-    if not prompt_file.is_file() or prompt_file.read_text(encoding="utf-8") != SYSTEM_PROMPT:
-        prompt_file.write_text(SYSTEM_PROMPT, encoding="utf-8")
+    for name, text in _SYSTEM_PROMPTS.items():
+        prompt_file = path / f"system-{name}.md"
+        if not prompt_file.is_file() or prompt_file.read_text(encoding="utf-8") != text:
+            prompt_file.write_text(text, encoding="utf-8")
     return path
 
 
@@ -82,14 +99,24 @@ class ClaudeCodeProvider:
         data = await self._run(overview_prompt(item), OVERVIEW_SCHEMA, [])
         return data["overview_markdown"]
 
-    async def _run(self, prompt: str, schema: dict, glossary: list[tuple[str, str]]) -> dict:
+    async def match_sections(self, partner: list[TocEntry], vendor: list[TocEntry]) -> dict[int, int | None]:
+        data = await self._run(match_prompt(partner, vendor), MATCH_SCHEMA, [], system="review")
+        return parse_matches(data, partner, vendor)
+
+    async def compare_section(self, item: CompareInput) -> list[FindingResult]:
+        data = await self._run(compare_prompt(item), COMPARE_SCHEMA, [], system="review")
+        return [FindingResult(**f) for f in data["findings"]]
+
+    async def _run(
+        self, prompt: str, schema: dict, glossary: list[tuple[str, str]], *, system: str = "summarize"
+    ) -> dict:
         work_dir = _work_dir()
         cmd = [
             *self._base_cmd,
             "-p",
             "--output-format", "json",
             "--json-schema", json.dumps(schema, ensure_ascii=False),
-            "--system-prompt-file", str(work_dir / "system-prompt.md"),
+            "--system-prompt-file", str(work_dir / f"system-{system}.md"),
             "--model", settings.claude_code_model,
             "--tools", "",
             "--max-turns", "3",

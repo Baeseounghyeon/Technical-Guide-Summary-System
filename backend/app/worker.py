@@ -7,7 +7,9 @@ from .config import settings
 from .db import SessionLocal, init_db
 from .models import Job, JobStatus, utcnow
 from .services.jobs import claim_next, requeue_stale
-from .services.pipeline import HANDLERS
+from .services import partner_review, pipeline
+
+HANDLERS = {**pipeline.HANDLERS, **partner_review.HANDLERS}
 
 log = logging.getLogger("worker")
 

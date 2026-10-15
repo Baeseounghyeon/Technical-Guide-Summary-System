@@ -62,11 +62,29 @@ class ExportStatus(StrEnum):
     FAILED = "failed"
 
 
+class PartnerGuideStatus(StrEnum):
+    UPLOADED = "uploaded"
+    PARSING = "parsing"
+    MATCHED = "matched"  # 목차 매칭 완료, 사용자가 확인 후 비교 시작
+    COMPARING = "comparing"
+    REVIEWING = "reviewing"
+    FAILED = "failed"
+
+
+class FindingStatus(StrEnum):
+    OPEN = "open"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
+
+
 class JobKind(StrEnum):
     PARSE_DOCUMENT = "parse_document"
     SUMMARIZE_GUIDE = "summarize_guide"
     REGENERATE_SECTION = "regenerate_section"
     EXPORT_GUIDE = "export_guide"
+    PARSE_PARTNER_GUIDE = "parse_partner_guide"
+    COMPARE_PARTNER_GUIDE = "compare_partner_guide"
+    EXPORT_CORRECTION = "export_correction"
 
 
 class JobStatus(StrEnum):
@@ -263,6 +281,124 @@ class Export(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     guide: Mapped[Guide] = relationship(back_populates="exports")
+
+
+# ---------- 2단계: 파트너 가이드 비교와 오류 수정 ----------
+
+
+class PartnerGuide(Base):
+    """파트너사가 별도로 만든 기술 가이드. 승인된 요약 가이드(와 그 벤더 원본)를 기준으로 검토한다."""
+
+    __tablename__ = "partner_guides"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    guide_id: Mapped[int] = mapped_column(ForeignKey("guides.id", ondelete="CASCADE"), index=True)
+    partner_id: Mapped[int | None] = mapped_column(ForeignKey("partners.id"), index=True)
+    uploaded_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    title: Mapped[str | None] = mapped_column(String(500))
+    source_type: Mapped[str] = mapped_column(String(10))  # pdf | docx | pptx
+    file_path: Mapped[str] = mapped_column(String(500))
+    status: Mapped[str] = mapped_column(String(20), default=PartnerGuideStatus.UPLOADED)
+    error: Mapped[str | None] = mapped_column(Text)
+    progress_current: Mapped[int] = mapped_column(Integer, default=0)
+    progress_total: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    guide: Mapped[Guide] = relationship()
+    sections: Mapped[list["PartnerSection"]] = relationship(
+        back_populates="partner_guide", order_by="PartnerSection.order_index", cascade="all, delete-orphan"
+    )
+    findings: Mapped[list["Finding"]] = relationship(
+        back_populates="partner_guide", order_by="Finding.id", cascade="all, delete-orphan"
+    )
+    exports: Mapped[list["CorrectionExport"]] = relationship(
+        back_populates="partner_guide", order_by="CorrectionExport.id", cascade="all, delete-orphan"
+    )
+
+
+class PartnerSection(Base):
+    """파트너 가이드의 목차 항목과, 대응하는 벤더 원본 목차 항목."""
+
+    __tablename__ = "partner_sections"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    partner_guide_id: Mapped[int] = mapped_column(ForeignKey("partner_guides.id", ondelete="CASCADE"), index=True)
+    order_index: Mapped[int] = mapped_column(Integer)
+    level: Mapped[int] = mapped_column(Integer)
+    title: Mapped[str] = mapped_column(String(500))
+    page_start: Mapped[int | None] = mapped_column(Integer)
+    page_end: Mapped[int | None] = mapped_column(Integer)
+    text: Mapped[str] = mapped_column(Text, default="")
+    matched_section_id: Mapped[int | None] = mapped_column(ForeignKey("sections.id", ondelete="SET NULL"))
+    match_method: Mapped[str | None] = mapped_column(String(20))  # auto | manual
+
+    partner_guide: Mapped[PartnerGuide] = relationship(back_populates="sections")
+    matched_section: Mapped[Section | None] = relationship()
+
+
+class Finding(Base):
+    """오류 후보. 수정 전/후, 사유, 벤더 원본 근거를 가진다."""
+
+    __tablename__ = "findings"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    partner_guide_id: Mapped[int] = mapped_column(ForeignKey("partner_guides.id", ondelete="CASCADE"), index=True)
+    partner_section_id: Mapped[int] = mapped_column(ForeignKey("partner_sections.id", ondelete="CASCADE"))
+    vendor_section_id: Mapped[int | None] = mapped_column(ForeignKey("sections.id", ondelete="SET NULL"))
+    category: Mapped[str] = mapped_column(String(30))  # wrong_value | wrong_command | missing_step | ...
+    severity: Mapped[str] = mapped_column(String(10))  # high | medium | low
+    before_text: Mapped[str] = mapped_column(Text)
+    after_text: Mapped[str] = mapped_column(Text)
+    reason: Mapped[str] = mapped_column(Text)
+    evidence: Mapped[str] = mapped_column(Text, default="")
+    # before_text 가 파트너 원문에 그대로 있어야 수정본에 자동 반영할 수 있다.
+    locatable: Mapped[bool] = mapped_column(Boolean, default=True)
+    status: Mapped[str] = mapped_column(String(20), default=FindingStatus.OPEN)
+    final_text: Mapped[str | None] = mapped_column(Text)  # 수락 시 실제 반영할 문구 (사용자가 고칠 수 있음)
+    decision_note: Mapped[str | None] = mapped_column(Text)
+    decided_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    partner_guide: Mapped[PartnerGuide] = relationship(back_populates="findings")
+    partner_section: Mapped[PartnerSection] = relationship()
+    vendor_section: Mapped[Section | None] = relationship()
+
+
+class CorrectionLog(Base):
+    """오류 수정 이력: 누가, 언제, 무엇을 어떻게 바꾸기로 했는지와 사유."""
+
+    __tablename__ = "correction_logs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    partner_guide_id: Mapped[int] = mapped_column(ForeignKey("partner_guides.id", ondelete="CASCADE"), index=True)
+    finding_id: Mapped[int] = mapped_column(ForeignKey("findings.id", ondelete="CASCADE"))
+    action: Mapped[str] = mapped_column(String(20))  # accepted | rejected | reopened
+    before_text: Mapped[str] = mapped_column(Text)
+    after_text: Mapped[str | None] = mapped_column(Text)
+    reason: Mapped[str] = mapped_column(Text)
+    note: Mapped[str | None] = mapped_column(Text)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class CorrectionExport(Base):
+    """수정 결과 파일. tracked: 변경 내용 추적 Word (Word 원본만), report: 수정 보고서 Word."""
+
+    __tablename__ = "correction_exports"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    partner_guide_id: Mapped[int] = mapped_column(ForeignKey("partner_guides.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(10))  # tracked | report
+    status: Mapped[str] = mapped_column(String(20), default=ExportStatus.QUEUED)
+    file_path: Mapped[str | None] = mapped_column(String(500))
+    applied_count: Mapped[int] = mapped_column(Integer, default=0)
+    skipped_count: Mapped[int] = mapped_column(Integer, default=0)
+    error: Mapped[str | None] = mapped_column(Text)
+    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    partner_guide: Mapped[PartnerGuide] = relationship(back_populates="exports")
 
 
 class Job(Base):

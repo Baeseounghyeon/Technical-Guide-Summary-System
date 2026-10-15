@@ -7,6 +7,7 @@ import DocumentPage from "./pages/DocumentPage";
 import DocumentsPage from "./pages/DocumentsPage";
 import GuidePage from "./pages/GuidePage";
 import LoginPage from "./pages/LoginPage";
+import PartnerGuidePage from "./pages/PartnerGuidePage";
 import SettingsPage from "./pages/SettingsPage";
 import SignupPage from "./pages/SignupPage";
 import type { Role } from "./types";
@@ -19,6 +20,7 @@ export default function App() {
       <Route path="/" element={<Protected><DocumentsPage /></Protected>} />
       <Route path="/documents/:id" element={<Protected><DocumentPage /></Protected>} />
       <Route path="/guides/:id" element={<Protected><GuidePage /></Protected>} />
+      <Route path="/partner-guides/:id" element={<Protected><PartnerGuidePage /></Protected>} />
       <Route path="/admin" element={<Protected roles={["platform_admin"]}><AdminPage /></Protected>} />
       <Route path="/settings" element={<Protected roles={SETTINGS_ROLES}><SettingsPage /></Protected>} />
       <Route path="*" element={<Navigate to="/" replace />} />
