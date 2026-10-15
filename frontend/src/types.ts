@@ -19,6 +19,12 @@ export interface User {
   created_at: string;
 }
 
+export interface AdminUser extends User {
+  partner_name: string | null;
+  domains: string[];
+  read_grants: { vendor_name: string; expires_at: string }[];
+}
+
 export interface Me extends User {
   partner_name: string | null;
   vendors: Vendor[];

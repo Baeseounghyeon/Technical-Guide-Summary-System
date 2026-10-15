@@ -62,6 +62,19 @@ class MeOut(UserOut):
     vendors: list[VendorOut]
 
 
+class ReadGrantBrief(BaseModel):
+    vendor_name: str
+    expires_at: UTCDateTime
+
+
+class AdminUserOut(UserOut):
+    """관리자 가입자 목록용: 소속, 할당된 도메인, 열람 권한까지."""
+
+    partner_name: str | None
+    domains: list[str]  # 소속 파트너사의 정식 도메인 (플랫폼 관리자는 전체)
+    read_grants: list[ReadGrantBrief]  # 기간 한정 읽기 전용 열람 (유효한 것만)
+
+
 class ApproveIn(BaseModel):
     partner_id: int | None = None
     role: Literal["platform_admin", "partner_admin", "engineer"] = "engineer"

@@ -2,7 +2,7 @@ import { useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { GRANT_STATUS, ROLE_LABELS } from "../labels";
-import type { AccessGrant, Partner, Role, User, Vendor } from "../types";
+import type { AccessGrant, AdminUser, Partner, Role, User, Vendor } from "../types";
 
 export default function AdminPage() {
   return (
@@ -12,11 +12,87 @@ export default function AdminPage() {
         <p className="muted">가입 승인, 파트너사와 벤더 도메인을 관리합니다.</p>
       </div>
       <PendingUsers />
+      <Members />
       <AccessRequests />
       <PartnersAndVendors />
     </>
   );
 }
+
+function Members() {
+  const [statusFilter, setStatusFilter] = useState("");
+  const [q, setQ] = useState("");
+  const users = useQuery({
+    queryKey: ["admin", "users", "all", statusFilter],
+    queryFn: () => api<AdminUser[]>(`/admin/users${statusFilter ? `?status=${statusFilter}` : ""}`),
+  });
+  const keyword = q.trim().toLowerCase();
+  const shown = (users.data ?? []).filter(
+    (u) => !keyword || [u.name, u.email, u.partner_name, u.company_name].some((v) => v?.toLowerCase().includes(keyword)),
+  );
+
+  return (
+    <section className="card">
+      <h2>가입자</h2>
+      <div className="form-row" style={{ marginBottom: 8 }}>
+        <label>검색 (이름·메일·회사)<input value={q} onChange={(e) => setQ(e.target.value)} /></label>
+        <label style={{ flex: "0 0 160px" }}>
+          상태
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+            <option value="">전체</option>
+            <option value="active">사용 중</option>
+            <option value="pending">승인 대기</option>
+            <option value="suspended">정지</option>
+          </select>
+        </label>
+      </div>
+      <p className="muted">{shown.length}명</p>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr><th>이름</th><th>가입 일시</th><th>메일</th><th>전화번호</th><th>소속</th><th>할당된 도메인</th><th>권한</th><th>상태</th></tr>
+          </thead>
+          <tbody>
+            {shown.map((u) => (
+              <tr key={u.id}>
+                <td style={{ whiteSpace: "nowrap" }}>{u.name}</td>
+                <td style={{ whiteSpace: "nowrap" }}>{new Date(u.created_at).toLocaleString()}</td>
+                <td>{u.email}</td>
+                <td style={{ whiteSpace: "nowrap" }}>{u.phone || "-"}</td>
+                <td>
+                  {u.partner_name ?? <span className="muted">미지정</span>}
+                  {(u.department || (!u.partner_name && u.company_name)) && (
+                    <div className="muted">{[u.department, !u.partner_name && u.company_name ? `신청: ${u.company_name}` : null].filter(Boolean).join(" · ")}</div>
+                  )}
+                </td>
+                <td>
+                  {u.role === "platform_admin" ? (
+                    <span className="muted">전체 도메인</span>
+                  ) : u.domains.length === 0 && u.read_grants.length === 0 ? (
+                    <span className="muted">없음</span>
+                  ) : (
+                    <div className="actions">
+                      {u.domains.map((d) => <span key={d} className="badge member">{d}</span>)}
+                      {u.read_grants.map((g) => (
+                        <span key={g.vendor_name} className="badge granted" title="기간 한정 읽기 전용">
+                          {g.vendor_name} 읽기 ~{new Date(g.expires_at).toLocaleDateString()}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </td>
+                <td style={{ whiteSpace: "nowrap" }}>{ROLE_LABELS[u.role]}</td>
+                <td><span className={`badge ${u.status}`}>{USER_STATUS[u.status]}</span></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+const USER_STATUS: Record<string, string> = { active: "사용 중", pending: "승인 대기", suspended: "정지" };
 
 function AccessRequests() {
   const queryClient = useQueryClient();

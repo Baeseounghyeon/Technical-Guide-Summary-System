@@ -1,25 +1,61 @@
 """플랫폼 관리자 전용: 가입 승인, 파트너사·벤더 도메인 관리."""
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..deps import require_platform_admin
-from ..models import Partner, Role, User, UserStatus, Vendor
-from ..schemas import ApproveIn, PartnerIn, PartnerOut, PartnerVendorsIn, UserOut, VendorIn, VendorOut
+from ..deps import as_utc, require_platform_admin
+from ..models import AccessGrant, GrantStatus, Partner, Role, User, UserStatus, Vendor, utcnow
+from ..schemas import (
+    AdminUserOut,
+    ApproveIn,
+    PartnerIn,
+    PartnerOut,
+    PartnerVendorsIn,
+    ReadGrantBrief,
+    UserOut,
+    VendorIn,
+    VendorOut,
+)
 
 router = APIRouter(prefix="/api/admin", tags=["관리자"], dependencies=[Depends(require_platform_admin)])
 
 
-@router.get("/users", response_model=list[UserOut])
+@router.get("/users", response_model=list[AdminUserOut])
 def list_users(
     status_filter: str | None = Query(None, alias="status"), db: Session = Depends(get_db)
-) -> list[User]:
+) -> list[AdminUserOut]:
+    """가입자 목록: 소속 파트너사, 할당된 도메인, 유효한 읽기 전용 열람 권한을 함께 돌려준다."""
     query = select(User).order_by(User.created_at.desc())
     if status_filter:
         query = query.where(User.status == status_filter)
-    return list(db.scalars(query))
+    all_vendors = sorted(v.name for v in db.scalars(select(Vendor)))
+    return [
+        AdminUserOut(
+            **UserOut.model_validate(u).model_dump(),
+            partner_name=u.partner.name if u.partner else None,
+            domains=all_vendors if u.role == Role.PLATFORM_ADMIN else sorted(v.name for v in (u.partner.vendors if u.partner else [])),
+            read_grants=_active_read_grants(db, u),
+        )
+        for u in db.scalars(query)
+    ]
+
+
+def _active_read_grants(db: Session, user: User) -> list[ReadGrantBrief]:
+    grants = db.scalars(
+        select(AccessGrant).where(
+            AccessGrant.user_id == user.id,
+            AccessGrant.status == GrantStatus.APPROVED,
+            or_(AccessGrant.grant_type.is_(None), AccessGrant.grant_type != "member"),
+        )
+    )
+    now = utcnow()
+    return [
+        ReadGrantBrief(vendor_name=g.vendor.name, expires_at=g.expires_at)
+        for g in grants
+        if g.expires_at and as_utc(g.expires_at) > now
+    ]
 
 
 @router.post("/users/{user_id}/approve", response_model=UserOut)
