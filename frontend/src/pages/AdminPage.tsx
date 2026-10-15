@@ -1,8 +1,8 @@
 import { useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
-import { ROLE_LABELS } from "../labels";
-import type { Partner, Role, User, Vendor } from "../types";
+import { GRANT_STATUS, ROLE_LABELS } from "../labels";
+import type { AccessGrant, Partner, Role, User, Vendor } from "../types";
 
 export default function AdminPage() {
   return (
@@ -12,8 +12,93 @@ export default function AdminPage() {
         <p className="muted">가입 승인, 파트너사와 벤더 도메인을 관리합니다.</p>
       </div>
       <PendingUsers />
+      <AccessRequests />
       <PartnersAndVendors />
     </>
+  );
+}
+
+function AccessRequests() {
+  const queryClient = useQueryClient();
+  const [showAll, setShowAll] = useState(false);
+  const requests = useQuery({
+    queryKey: ["admin", "access-requests", showAll],
+    queryFn: () => api<AccessGrant[]>(`/admin/access-requests${showAll ? "" : "?status=pending"}`),
+  });
+  const refresh = () => queryClient.invalidateQueries({ queryKey: ["admin", "access-requests"] });
+  const revoke = useMutation({ mutationFn: (id: number) => api(`/admin/access-requests/${id}/revoke`, { method: "POST" }), onSuccess: refresh });
+
+  return (
+    <section className="card">
+      <div className="summary-head">
+        <h2 style={{ margin: 0 }}>타 도메인 열람 신청</h2>
+        <label className="check"><input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} />처리한 신청도 보기</label>
+      </div>
+      <p className="muted">승인하면 정한 기간 동안 해당 도메인 커뮤니티를 읽기만 할 수 있습니다.</p>
+      {requests.data?.length === 0 && <p className="muted">{showAll ? "신청 기록이 없습니다." : "대기 중인 신청이 없습니다."}</p>}
+      <div className="table-wrap">
+        <table>
+          <tbody>
+            {requests.data?.map((g) =>
+              g.status === "pending" ? (
+                <AccessRequestRow key={g.id} grant={g} onDone={refresh} />
+              ) : (
+                <tr key={g.id}>
+                  <td>
+                    <strong>{g.user.name}</strong> <span className="muted">{g.user.partner_name} → {g.vendor_name}</span>
+                    <div className="muted">사유: {g.reason}</div>
+                  </td>
+                  <td>
+                    <span className={`badge ${g.active ? "approved" : g.status}`}>
+                      {g.status === "approved" && !g.active ? "기간 만료" : GRANT_STATUS[g.status]}
+                    </span>
+                    <div className="muted">
+                      {g.decided_by_name}
+                      {g.expires_at && g.status === "approved" && ` · ${new Date(g.expires_at).toLocaleDateString()}까지`}
+                      {g.decision_note && ` · ${g.decision_note}`}
+                    </div>
+                  </td>
+                  <td>{g.active && <button onClick={() => revoke.mutate(g.id)}>회수</button>}</td>
+                </tr>
+              ),
+            )}
+          </tbody>
+        </table>
+      </div>
+      {revoke.error && <p className="error">{revoke.error.message}</p>}
+    </section>
+  );
+}
+
+function AccessRequestRow({ grant, onDone }: { grant: AccessGrant; onDone: () => void }) {
+  const [days, setDays] = useState(grant.requested_days);
+  const [note, setNote] = useState("");
+  const decide = useMutation({
+    mutationFn: (approve: boolean) =>
+      api(`/admin/access-requests/${grant.id}/decision`, { method: "POST", json: { approve, days, note } }),
+    onSuccess: onDone,
+  });
+
+  return (
+    <tr>
+      <td>
+        <strong>{grant.user.name}</strong> <span className="muted">{grant.user_email}</span>
+        <div className="muted">{grant.user.partner_name} → <strong>{grant.vendor_name}</strong> · {new Date(grant.created_at).toLocaleDateString()}</div>
+        <div>사유: {grant.reason}</div>
+        {decide.error && <div className="error">{decide.error.message}</div>}
+      </td>
+      <td style={{ width: 120 }}>
+        <label>
+          기간(일)
+          <input type="number" min={1} max={365} value={days} onChange={(e) => setDays(Number(e.target.value))} />
+        </label>
+      </td>
+      <td><label>메모<input value={note} onChange={(e) => setNote(e.target.value)} /></label></td>
+      <td style={{ whiteSpace: "nowrap" }}>
+        <button className="primary" disabled={decide.isPending} onClick={() => decide.mutate(true)}>승인</button>{" "}
+        <button disabled={decide.isPending} onClick={() => decide.mutate(false)}>거절</button>
+      </td>
+    </tr>
   );
 }
 

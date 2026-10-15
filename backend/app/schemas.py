@@ -350,3 +350,119 @@ class CorrectionExportOut(ORM):
     skipped_count: int
     error: str | None
     created_at: UTCDateTime
+
+
+# ---- 3단계: 커뮤니티 ----
+
+
+class Author(BaseModel):
+    id: int
+    name: str
+    partner_name: str | None
+
+
+class DomainOut(BaseModel):
+    vendor_id: int
+    vendor_name: str
+    access: Literal["member", "granted", "none"]
+    grant_expires_at: UTCDateTime | None = None
+    pending_request: bool = False
+    post_count: int = 0
+    upcoming_events: int = 0
+
+
+class PostIn(BaseModel):
+    title: str = Field(min_length=1, max_length=300)
+    body: str = Field(min_length=1)
+    product: str | None = Field(default=None, max_length=200)
+    version: str | None = Field(default=None, max_length=100)
+    tags: list[str] = Field(default_factory=list, max_length=10)
+
+
+class PostSummary(BaseModel):
+    id: int
+    vendor_id: int
+    title: str
+    product: str | None
+    version: str | None
+    tags: list[str]
+    status: str
+    author: Author
+    comment_count: int
+    created_at: UTCDateTime
+
+
+class CommentOut(BaseModel):
+    id: int
+    body: str
+    author: Author
+    created_at: UTCDateTime
+
+
+class PostDetail(PostSummary):
+    body: str
+    solution_comment_id: int | None
+    updated_at: UTCDateTime
+    comments: list[CommentOut]
+    can_write: bool  # 열람 승인(읽기 전용) 사용자는 false
+    can_edit: bool  # 작성자 또는 관리자
+
+
+class CommentIn(BaseModel):
+    body: str = Field(min_length=1)
+
+
+class PostStatusIn(BaseModel):
+    status: Literal["open", "resolved"]
+    solution_comment_id: int | None = None
+
+
+class EventIn(BaseModel):
+    title: str = Field(min_length=1, max_length=300)
+    description: str = ""
+    starts_at: datetime
+    ends_at: datetime | None = None
+    join_url: str | None = Field(default=None, max_length=1000)
+
+
+class EventOut(BaseModel):
+    id: int
+    vendor_id: int
+    title: str
+    description: str
+    starts_at: UTCDateTime
+    ends_at: UTCDateTime | None
+    join_url: str | None
+    organizer: Author
+    attendee_count: int
+    attendees: list[str]
+    attending: bool
+    can_edit: bool
+
+
+class AccessRequestIn(BaseModel):
+    reason: str = Field(min_length=1)
+    days: int = Field(default=30, ge=1, le=365)
+
+
+class AccessGrantOut(BaseModel):
+    id: int
+    user: Author
+    user_email: str
+    vendor_id: int
+    vendor_name: str
+    reason: str
+    requested_days: int
+    status: str
+    active: bool
+    decided_by_name: str | None
+    decided_at: UTCDateTime | None
+    expires_at: UTCDateTime | None
+    decision_note: str | None
+    created_at: UTCDateTime
+
+
+class AccessDecisionIn(BaseModel):
+    approve: bool
+    days: int | None = Field(default=None, ge=1, le=365)  # 비우면 신청 기간
+    note: str | None = None

@@ -3,6 +3,9 @@ import { Link, Navigate, NavLink, Route, Routes } from "react-router-dom";
 import { useAuth } from "./auth";
 import { ROLE_LABELS } from "./labels";
 import AdminPage from "./pages/AdminPage";
+import CommunityPage from "./pages/CommunityPage";
+import DomainPage from "./pages/DomainPage";
+import PostPage from "./pages/PostPage";
 import DocumentPage from "./pages/DocumentPage";
 import DocumentsPage from "./pages/DocumentsPage";
 import GuidePage from "./pages/GuidePage";
@@ -21,6 +24,9 @@ export default function App() {
       <Route path="/documents/:id" element={<Protected><DocumentPage /></Protected>} />
       <Route path="/guides/:id" element={<Protected><GuidePage /></Protected>} />
       <Route path="/partner-guides/:id" element={<Protected><PartnerGuidePage /></Protected>} />
+      <Route path="/community" element={<Protected><CommunityPage /></Protected>} />
+      <Route path="/community/:vendorId" element={<Protected><DomainPage /></Protected>} />
+      <Route path="/community/posts/:id" element={<Protected><PostPage /></Protected>} />
       <Route path="/admin" element={<Protected roles={["platform_admin"]}><AdminPage /></Protected>} />
       <Route path="/settings" element={<Protected roles={SETTINGS_ROLES}><SettingsPage /></Protected>} />
       <Route path="*" element={<Navigate to="/" replace />} />
@@ -42,6 +48,7 @@ function Protected({ children, roles }: { children: ReactNode; roles?: Role[] })
         <Link to="/" className="brand">기술 가이드 요약</Link>
         <nav>
           <NavLink to="/" end>문서</NavLink>
+          <NavLink to="/community">커뮤니티</NavLink>
           {SETTINGS_ROLES.includes(me.role) && <NavLink to="/settings">설정</NavLink>}
           {me.role === "platform_admin" && <NavLink to="/admin">관리자</NavLink>}
         </nav>

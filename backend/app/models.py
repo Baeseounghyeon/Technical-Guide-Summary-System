@@ -401,6 +401,108 @@ class CorrectionExport(Base):
     partner_guide: Mapped[PartnerGuide] = relationship(back_populates="exports")
 
 
+# ---------- 3단계: 벤더 도메인 커뮤니티 ----------
+
+
+class PostStatus(StrEnum):
+    OPEN = "open"
+    RESOLVED = "resolved"
+
+
+class GrantStatus(StrEnum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    REVOKED = "revoked"
+
+
+class Post(Base):
+    """이슈 처리 경험 공유 글. 벤더 도메인 단위로 모든 파트너사가 함께 본다."""
+
+    __tablename__ = "posts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    vendor_id: Mapped[int] = mapped_column(ForeignKey("vendors.id", ondelete="CASCADE"), index=True)
+    author_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    title: Mapped[str] = mapped_column(String(300))
+    body: Mapped[str] = mapped_column(Text)
+    product: Mapped[str | None] = mapped_column(String(200))
+    version: Mapped[str | None] = mapped_column(String(100))
+    tags: Mapped[list] = mapped_column(JSON, default=list)
+    status: Mapped[str] = mapped_column(String(20), default=PostStatus.OPEN)
+    solution_comment_id: Mapped[int | None] = mapped_column(Integer)  # 해결에 도움이 된 댓글
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    author: Mapped[User] = relationship()
+    comments: Mapped[list["Comment"]] = relationship(
+        back_populates="post", order_by="Comment.id", cascade="all, delete-orphan"
+    )
+
+
+class Comment(Base):
+    __tablename__ = "comments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    post_id: Mapped[int] = mapped_column(ForeignKey("posts.id", ondelete="CASCADE"), index=True)
+    author_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    body: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    post: Mapped[Post] = relationship(back_populates="comments")
+    author: Mapped[User] = relationship()
+
+
+class SessionEvent(Base):
+    """온라인 세션 일정."""
+
+    __tablename__ = "session_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    vendor_id: Mapped[int] = mapped_column(ForeignKey("vendors.id", ondelete="CASCADE"), index=True)
+    organizer_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    title: Mapped[str] = mapped_column(String(300))
+    description: Mapped[str] = mapped_column(Text, default="")
+    starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    join_url: Mapped[str | None] = mapped_column(String(1000))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    organizer: Mapped[User] = relationship()
+    attendees: Mapped[list["EventAttendee"]] = relationship(cascade="all, delete-orphan")
+
+
+class EventAttendee(Base):
+    __tablename__ = "event_attendees"
+
+    event_id: Mapped[int] = mapped_column(ForeignKey("session_events.id", ondelete="CASCADE"), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    user: Mapped[User] = relationship()
+
+
+class AccessGrant(Base):
+    """다른 벤더 도메인 커뮤니티 열람 신청과 승인 기록. 승인되면 기간 동안 읽기만 가능."""
+
+    __tablename__ = "access_grants"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    vendor_id: Mapped[int] = mapped_column(ForeignKey("vendors.id", ondelete="CASCADE"), index=True)
+    reason: Mapped[str] = mapped_column(Text)
+    requested_days: Mapped[int] = mapped_column(Integer, default=30)
+    status: Mapped[str] = mapped_column(String(20), default=GrantStatus.PENDING)
+    decided_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    decision_note: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    user: Mapped[User] = relationship(foreign_keys=[user_id])
+    vendor: Mapped[Vendor] = relationship()
+
+
 class Job(Base):
     """Worker 가 처리하는 백그라운드 작업 (DB 기반 큐)."""
 

@@ -5,13 +5,25 @@
 - 그 외 사용자는 자기 파트너사가 지원하는 벤더 도메인 안에서, 자기 파트너사 문서만 본다.
 """
 
+from datetime import datetime, timezone
+
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .db import get_db
-from .models import Guide, Role, SourceDocument, User, UserStatus, Vendor
+from .models import (
+    AccessGrant,
+    GrantStatus,
+    Guide,
+    Role,
+    SourceDocument,
+    User,
+    UserStatus,
+    Vendor,
+    utcnow,
+)
 from .security import decode_access_token
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
@@ -71,3 +83,46 @@ def _can_see_document(db: Session, user: User, doc: SourceDocument) -> bool:
     if is_admin(user):
         return True
     return doc.partner_id == user.partner_id and doc.vendor_id in {v.id for v in accessible_vendors(db, user)}
+
+
+# ---------- 커뮤니티 접근 (3단계) ----------
+# member : 자기 파트너사가 지원하는 벤더 도메인 → 읽기·쓰기
+# granted: 관리자가 기간을 정해 열람을 승인한 다른 도메인 → 읽기만
+# none   : 그 외 → 접근 불가 (열람 신청만 가능)
+
+
+def active_grant(db: Session, user: User, vendor_id: int) -> AccessGrant | None:
+    grants = db.scalars(
+        select(AccessGrant).where(
+            AccessGrant.user_id == user.id,
+            AccessGrant.vendor_id == vendor_id,
+            AccessGrant.status == GrantStatus.APPROVED,
+        )
+    )
+    now = utcnow()
+    return next((g for g in grants if g.expires_at and as_utc(g.expires_at) > now), None)
+
+
+def domain_access(db: Session, user: User, vendor_id: int) -> str:
+    if vendor_id in {v.id for v in accessible_vendors(db, user)}:
+        return "member"
+    return "granted" if active_grant(db, user, vendor_id) else "none"
+
+
+def require_domain_read(db: Session, user: User, vendor_id: int) -> str:
+    access = domain_access(db, user, vendor_id)
+    if access == "none":
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "이 도메인 커뮤니티를 볼 권한이 없습니다. 열람 신청 후 관리자 승인을 받으세요."
+        )
+    return access
+
+
+def require_domain_write(db: Session, user: User, vendor_id: int) -> None:
+    if domain_access(db, user, vendor_id) != "member":
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "열람 승인된 도메인에서는 읽기만 할 수 있습니다.")
+
+
+def as_utc(value: datetime) -> datetime:
+    """SQLite 는 시간대를 저장하지 않으므로 UTC 로 간주해 시간대를 붙인다."""
+    return value if value.tzinfo else value.replace(tzinfo=timezone.utc)

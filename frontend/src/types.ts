@@ -213,6 +213,87 @@ export interface CorrectionLog {
   created_at: string;
 }
 
+// ---- 3단계: 커뮤니티 ----
+
+export type DomainAccess = "member" | "granted" | "none";
+
+export interface Author {
+  id: number;
+  name: string;
+  partner_name: string | null;
+}
+
+export interface Domain {
+  vendor_id: number;
+  vendor_name: string;
+  access: DomainAccess;
+  grant_expires_at: string | null;
+  pending_request: boolean;
+  post_count: number;
+  upcoming_events: number;
+}
+
+export interface PostSummary {
+  id: number;
+  vendor_id: number;
+  title: string;
+  product: string | null;
+  version: string | null;
+  tags: string[];
+  status: "open" | "resolved";
+  author: Author;
+  comment_count: number;
+  created_at: string;
+}
+
+export interface PostComment {
+  id: number;
+  body: string;
+  author: Author;
+  created_at: string;
+}
+
+export interface PostDetail extends PostSummary {
+  body: string;
+  solution_comment_id: number | null;
+  updated_at: string;
+  comments: PostComment[];
+  can_write: boolean;
+  can_edit: boolean;
+}
+
+export interface SessionEvent {
+  id: number;
+  vendor_id: number;
+  title: string;
+  description: string;
+  starts_at: string;
+  ends_at: string | null;
+  join_url: string | null;
+  organizer: Author;
+  attendee_count: number;
+  attendees: string[];
+  attending: boolean;
+  can_edit: boolean;
+}
+
+export interface AccessGrant {
+  id: number;
+  user: Author;
+  user_email: string;
+  vendor_id: number;
+  vendor_name: string;
+  reason: string;
+  requested_days: number;
+  status: "pending" | "approved" | "rejected" | "revoked";
+  active: boolean;
+  decided_by_name: string | null;
+  decided_at: string | null;
+  expires_at: string | null;
+  decision_note: string | null;
+  created_at: string;
+}
+
 export interface CorrectionExport {
   id: number;
   kind: "tracked" | "report";

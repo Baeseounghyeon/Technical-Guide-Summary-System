@@ -61,3 +61,14 @@ export const SEVERITY_LABELS: Record<string, string> = { high: "심각도 높음
 export const FINDING_STATUS: Record<string, string> = { open: "미결정", accepted: "수락", rejected: "거절" };
 
 export const LOG_ACTION: Record<string, string> = { accepted: "수락", rejected: "거절", reopened: "되돌림" };
+
+export const ACCESS_LABELS: Record<string, string> = { member: "소속 도메인", granted: "열람 승인 (읽기 전용)", none: "접근 불가" };
+
+export const POST_STATUS: Record<string, string> = { open: "해결 중", resolved: "해결됨" };
+
+export const GRANT_STATUS: Record<string, string> = {
+  pending: "승인 대기",
+  approved: "승인",
+  rejected: "거절",
+  revoked: "회수",
+};
