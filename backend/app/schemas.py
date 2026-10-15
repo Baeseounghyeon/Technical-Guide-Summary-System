@@ -375,6 +375,74 @@ class CorrectionExportOut(ORM):
     created_at: UTCDateTime
 
 
+# ---- 파트너 간 가이드 공유 · 알림 ----
+
+
+class SharedGuideOut(BaseModel):
+    guide_id: int
+    title: str
+    vendor_name: str
+    owner_partner_name: str
+    target_language: str
+    formats: list[str]  # 만들어진 최종 문서 형식 (docx, pptx)
+    updated_at: UTCDateTime  # 가장 최근 최종 문서 생성 시각
+    request_id: int | None
+    request_status: Literal["none", "pending", "approved", "rejected"]
+    decision_note: str | None
+
+
+class SharedExportOut(BaseModel):
+    id: int
+    format: str
+    doc_version: str
+    created_at: UTCDateTime
+
+
+class DownloadRequestIn(BaseModel):
+    message: str | None = Field(default=None, max_length=1000)
+
+
+class DownloadRequestOut(BaseModel):
+    id: int
+    guide_id: int
+    guide_title: str
+    vendor_name: str
+    requester_name: str
+    requester_email: str
+    requester_partner_name: str
+    owner_partner_name: str
+    message: str | None
+    status: str
+    decided_by_name: str | None
+    decided_at: UTCDateTime | None
+    decision_note: str | None
+    created_at: UTCDateTime
+    can_decide: bool
+
+
+class DownloadDecisionIn(BaseModel):
+    approve: bool
+    note: str | None = None
+
+
+class NotificationOut(ORM):
+    id: int
+    kind: str
+    title: str
+    body: str | None
+    link: str | None
+    related_id: int | None
+    read_at: UTCDateTime | None
+    created_at: UTCDateTime
+    # download_request 알림일 때 요청이 아직 대기 중이면 알림 안에서 바로 승인/거절할 수 있다.
+    actionable: bool = False
+
+
+class NotificationList(BaseModel):
+    unread: int
+    items: list[NotificationOut]
+
+
 # ---- 대시보드 ----
 
 

@@ -12,7 +12,9 @@ import DocumentsPage from "./pages/DocumentsPage";
 import GuidePage from "./pages/GuidePage";
 import LoginPage from "./pages/LoginPage";
 import PartnerGuidePage from "./pages/PartnerGuidePage";
+import NotificationBell from "./NotificationBell";
 import SettingsPage from "./pages/SettingsPage";
+import SharedPage from "./pages/SharedPage";
 import SignupPage from "./pages/SignupPage";
 import type { Role } from "./types";
 
@@ -26,6 +28,7 @@ export default function App() {
       <Route path="/documents/:id" element={<Protected><DocumentPage /></Protected>} />
       <Route path="/guides/:id" element={<Protected><GuidePage /></Protected>} />
       <Route path="/partner-guides/:id" element={<Protected><PartnerGuidePage /></Protected>} />
+      <Route path="/shared" element={<Protected><SharedPage /></Protected>} />
       <Route path="/community" element={<Protected><CommunityPage /></Protected>} />
       <Route path="/community/:vendorId" element={<Protected><DomainPage /></Protected>} />
       <Route path="/community/posts/:id" element={<Protected><PostPage /></Protected>} />
@@ -47,18 +50,21 @@ function Protected({ children, roles }: { children: ReactNode; roles?: Role[] })
   return (
     <>
       <header className="topbar">
-        <Link to="/" className="brand">
-          <span className="brand-mark">TG</span>
-          기술 가이드 요약
+        <Link to="/" className="brand" aria-label="unipoint 홈">
+          unipoint<span className="brand-dot" aria-hidden="true" />
         </Link>
         <nav>
           <NavLink to="/" end>대시보드</NavLink>
           <NavLink to="/documents">문서</NavLink>
+          <NavLink to="/shared">가이드 공유</NavLink>
           <NavLink to="/community">커뮤니티</NavLink>
           {SETTINGS_ROLES.includes(me.role) && <NavLink to="/settings">설정</NavLink>}
           {me.role === "platform_admin" && <NavLink to="/admin">관리자</NavLink>}
         </nav>
-        <UserMenu />
+        <div className="topbar-right">
+          <NotificationBell />
+          <UserMenu />
+        </div>
       </header>
       <main className="page">{children}</main>
       <HashScroll />

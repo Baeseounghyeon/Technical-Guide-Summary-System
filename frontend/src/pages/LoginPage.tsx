@@ -29,8 +29,9 @@ export default function LoginPage() {
   return (
     <div className="page">
       <div className="card auth-card">
+        <div className="auth-brand">unipoint<span className="brand-dot" aria-hidden="true" /></div>
         <h1>로그인</h1>
-        <p className="muted">벤더 기술 가이드 요약 시스템</p>
+        <p className="muted">벤더 기술 가이드 요약 · 공유</p>
         <form className="form" onSubmit={submit}>
           <label>이메일<input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required /></label>
           <label>비밀번호<input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required /></label>

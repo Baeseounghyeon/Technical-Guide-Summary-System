@@ -9,7 +9,19 @@ from sqlalchemy import select
 from .config import settings
 from .db import SessionLocal, init_db
 from .models import Role, User, UserStatus
-from .routers import admin, auth, community, dashboard, documents, exports, guides, partner_guides, partners, vendors
+from .routers import (
+    admin,
+    auth,
+    community,
+    dashboard,
+    documents,
+    exports,
+    guides,
+    partner_guides,
+    partners,
+    sharing,
+    vendors,
+)
 from .security import hash_password
 
 
@@ -55,7 +67,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-for module in (auth, admin, vendors, partners, documents, guides, exports, partner_guides, community, dashboard):
+for module in (auth, admin, vendors, partners, documents, guides, exports, partner_guides, community, dashboard, sharing):
     app.include_router(module.router)
 
 

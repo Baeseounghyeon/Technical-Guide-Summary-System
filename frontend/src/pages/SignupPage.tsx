@@ -26,6 +26,7 @@ export default function SignupPage() {
   return (
     <div className="page">
       <div className="card auth-card">
+        <div className="auth-brand">unipoint<span className="brand-dot" aria-hidden="true" /></div>
         <h1>가입 신청</h1>
         {done ? (
           <>

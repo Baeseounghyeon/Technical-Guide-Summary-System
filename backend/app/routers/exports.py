@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..deps import get_active_user, get_guide_for_user, is_admin
-from ..models import Export, ExportStatus, GuideStatus, JobKind, Partner, User
+from ..models import Export, ExportStatus, Guide, GuideStatus, JobKind, Partner, User
 from ..schemas import ExportCreate, ExportOut
 from ..services.jobs import enqueue
 
@@ -66,7 +66,15 @@ def download_export(export_id: int, user: User = Depends(get_active_user), db: S
     export = db.get(Export, export_id)
     if export is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "문서를 찾을 수 없습니다.")
-    guide = get_guide_for_user(db, user, export.guide_id)
+    try:
+        guide = get_guide_for_user(db, user, export.guide_id)
+    except HTTPException:
+        # 다른 파트너사 가이드: 소유 파트너사가 다운로드 요청을 승인했으면 받을 수 있다.
+        from .sharing import can_download_shared
+
+        guide = db.get(Guide, export.guide_id)
+        if guide is None or not can_download_shared(db, user, guide):
+            raise
     if export.status != ExportStatus.DONE or not export.file_path:
         raise HTTPException(status.HTTP_409_CONFLICT, "아직 생성되지 않은 문서입니다.")
     title = guide.document.title or "guide"

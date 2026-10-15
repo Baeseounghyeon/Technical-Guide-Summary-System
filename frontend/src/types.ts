@@ -220,6 +220,58 @@ export interface CorrectionLog {
   created_at: string;
 }
 
+// ---- 파트너 간 가이드 공유 · 알림 ----
+
+export interface SharedGuide {
+  guide_id: number;
+  title: string;
+  vendor_name: string;
+  owner_partner_name: string;
+  target_language: string;
+  formats: string[];
+  updated_at: string;
+  request_id: number | null;
+  request_status: "none" | "pending" | "approved" | "rejected";
+  decision_note: string | null;
+}
+
+export interface SharedExport {
+  id: number;
+  format: "docx" | "pptx";
+  doc_version: string;
+  created_at: string;
+}
+
+export interface DownloadRequest {
+  id: number;
+  guide_id: number;
+  guide_title: string;
+  vendor_name: string;
+  requester_name: string;
+  requester_email: string;
+  requester_partner_name: string;
+  owner_partner_name: string;
+  message: string | null;
+  status: "pending" | "approved" | "rejected";
+  decided_by_name: string | null;
+  decided_at: string | null;
+  decision_note: string | null;
+  created_at: string;
+  can_decide: boolean;
+}
+
+export interface AppNotification {
+  id: number;
+  kind: "download_request" | "download_decision" | string;
+  title: string;
+  body: string | null;
+  link: string | null;
+  related_id: number | null;
+  read_at: string | null;
+  created_at: string;
+  actionable: boolean;
+}
+
 // ---- 대시보드 ----
 
 export type DocumentStage = "analyzing" | "not_started" | "summarizing" | "reviewing" | "approved" | "exported" | "failed";

@@ -44,7 +44,7 @@ export default function DashboardPage() {
           <h1>{me?.name}님, 안녕하세요</h1>
           <p className="muted">내가 올린 벤더 기술 문서의 처리 현황입니다.</p>
         </div>
-        <Link to="/documents" className="button-link primary">+ 새 문서 올리기</Link>
+        <Link to="/documents" className="button-link cta">+ 새 문서 올리기</Link>
       </div>
 
       <div className="stat-grid">

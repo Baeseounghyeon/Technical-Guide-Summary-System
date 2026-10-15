@@ -507,6 +507,51 @@ class AccessGrant(Base):
     vendor: Mapped[Vendor] = relationship()
 
 
+# ---------- 파트너 간 가이드 공유 · 알림 ----------
+
+
+class DownloadRequest(Base):
+    """같은 벤더 도메인의 다른 파트너사가 만든 가이드를 내려받기 위한 요청. 소유 파트너사가 승인한다.
+
+    승인은 파트너사 단위: 승인되면 요청한 파트너사의 사용자 모두가 그 가이드의 최종 문서를 받을 수 있다.
+    """
+
+    __tablename__ = "download_requests"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    guide_id: Mapped[int] = mapped_column(ForeignKey("guides.id", ondelete="CASCADE"), index=True)
+    requester_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    requester_partner_id: Mapped[int] = mapped_column(ForeignKey("partners.id"), index=True)
+    owner_partner_id: Mapped[int] = mapped_column(ForeignKey("partners.id"), index=True)
+    message: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(20), default=GrantStatus.PENDING)  # pending | approved | rejected
+    decided_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    decision_note: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    guide: Mapped[Guide] = relationship()
+    requester: Mapped[User] = relationship(foreign_keys=[requester_id])
+    requester_partner: Mapped[Partner] = relationship(foreign_keys=[requester_partner_id])
+    owner_partner: Mapped[Partner] = relationship(foreign_keys=[owner_partner_id])
+
+
+class Notification(Base):
+    """상단 알림. kind 로 화면에서 표시 방식을 고른다 (download_request 는 알림 안에서 승인/거절)."""
+
+    __tablename__ = "notifications"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(40))  # download_request | download_decision
+    title: Mapped[str] = mapped_column(String(300))
+    body: Mapped[str | None] = mapped_column(Text)
+    link: Mapped[str | None] = mapped_column(String(300))
+    related_id: Mapped[int | None] = mapped_column(Integer)
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class Job(Base):
     """Worker 가 처리하는 백그라운드 작업 (DB 기반 큐)."""
 
