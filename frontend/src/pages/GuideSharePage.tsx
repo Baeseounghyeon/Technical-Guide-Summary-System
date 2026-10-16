@@ -170,7 +170,7 @@ function ShareDialog({ onClose, onShared }: { onClose: () => void; onShared: () 
             </select>
           </label>
           {docs.data?.length === 0 && (
-            <p className="muted">내가 등록한 가이드가 없습니다. <Link to="/documents?type=guide">가이드 등록</Link>에서 먼저 올리세요.</p>
+            <p className="muted">내가 등록한 가이드가 없습니다. <Link to="/documents?type=guide">문서 등록</Link>에서 먼저 올리세요.</p>
           )}
           <label>
             조직

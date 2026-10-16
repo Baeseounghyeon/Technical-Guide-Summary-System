@@ -362,7 +362,7 @@ export function GuideCreatePage() {
       <div className="page-header">
         <h1>가이드 생성</h1>
         <p className="muted">
-          등록한 가이드 문서를 골라 요약 가이드를 만듭니다. 새 문서는 <Link to="/documents?type=guide">가이드 등록</Link>에서 먼저 올리세요.
+          등록한 가이드 문서를 골라 요약 가이드를 만듭니다. 새 문서는 <Link to="/documents?type=guide">문서 등록</Link>에서 먼저 올리세요.
           만든 가이드는 <Link to="/guides/created">생성한 가이드</Link>에서 봅니다.
         </p>
       </div>

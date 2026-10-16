@@ -147,11 +147,11 @@ function TypeMenu({ base, label, canEdit, create = false, work = false }: { base
   return <HoverMenu to={base} label={label} items={items} />;
 }
 
-/** 상단 '가이드' 메뉴: 누르면 등록한 가이드, 마우스를 올리면 가이드 등록·등록한 가이드·조직 요청 가이드·가이드 공유. */
+/** 상단 '가이드' 메뉴: 누르면 등록한 가이드, 마우스를 올리면 가이드 생성·등록한 가이드·조직 요청 가이드·생성한 가이드·가이드 공유.
+ *  가이드 문서 올리기는 '문서 > 문서 등록'에서 한다 (같은 기능이라 가이드 메뉴의 '가이드 등록'은 뺐다). */
 function GuidesMenu({ canEdit }: { canEdit: boolean }) {
-  const { pathname, search } = useLocation();
+  const { pathname } = useLocation();
   const items = [
-    ...(canEdit ? [{ key: "upload", label: "가이드 등록", to: "/documents?type=guide", active: pathname === "/documents" && search.includes("type=guide") }] : []),
     ...(canEdit ? [{ key: "create", label: "가이드 생성", to: "/guides/create", active: pathname === "/guides/create" }] : []),
     { key: "registered", label: canEdit ? "등록한 가이드" : "등록된 가이드", to: "/guides", active: pathname === "/guides" },
     { key: "org", label: "조직 요청 가이드", to: "/guides/org", active: pathname === "/guides/org" },

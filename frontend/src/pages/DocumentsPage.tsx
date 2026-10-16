@@ -10,7 +10,7 @@ import type { DocumentSummary } from "../types";
 const IN_PROGRESS = new Set(["uploaded", "parsing"]);
 
 /** 문서 등록: 문서 가져오기 양식만 보여 준다. 올린 뒤에는 '등록한 문서'의 해당 종류 탭으로 간다.
- *  ?type=spec|guide|brochure 로 오면 등록할 종류를 미리 골라 둔다 (상단 메뉴의 '가이드 등록' 등). */
+ *  ?type=spec|guide|brochure 로 오면 등록할 종류를 미리 골라 둔다 (가이드 생성·가이드 공유 화면의 문서 등록 링크 등). */
 export default function DocumentsPage() {
   const navigate = useNavigate();
   const { me } = useAuth();
