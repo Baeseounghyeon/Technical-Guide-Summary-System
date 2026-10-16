@@ -63,7 +63,7 @@ export interface DocumentSummary {
   vendor_id: number;
   vendor_name: string;
   title: string | null;
-  doc_type: "spec" | "guide" | "brochure";
+  doc_type: "spec" | "guide" | "quote" | "brochure";
   guide_kind: "technical" | "troubleshooting" | null;
   product: string | null;
   product_detail: string | null;

@@ -127,6 +127,11 @@ async function fetchFile(path: string): Promise<{ blob: Blob; filename: string |
   return { blob: await res.blob(), filename: encoded ? decodeURIComponent(encoded) : (plain ?? null) };
 }
 
+/** JSON 을 보내고 파일(Blob)을 받는다 (예: 규격서 미리보기 PDF). */
+export async function postBlob(path: string, json: unknown): Promise<Blob> {
+  return (await request(path, { method: "POST", json })).blob();
+}
+
 /** 인증 헤더가 필요한 파일을 Blob 으로 받는다 (이미지 미리보기 등). */
 export async function fetchBlob(path: string): Promise<Blob> {
   return (await fetchFile(path)).blob;

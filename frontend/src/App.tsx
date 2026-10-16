@@ -20,6 +20,7 @@ import QuotesPage from "./pages/QuotesPage";
 import { DomainRequestPage, MyRequestsPage } from "./pages/RequestsPages";
 import { PermissionRequestPage } from "./pages/PermissionPages";
 import GuideSharePage from "./pages/GuideSharePage";
+import { CreatedGuidesPage, FormCreatePage, GeneratedListPage, GuideCreatePage } from "./pages/GeneratePages";
 import HomeDetailPage from "./pages/HomeDetailPage";
 import TrashPage from "./pages/TrashPage";
 import NotificationBell from "./NotificationBell";
@@ -44,18 +45,24 @@ export default function App() {
       <Route path="/requests/domain" element={<Protected><DomainRequestPage /></Protected>} />
       <Route path="/specs" element={<Protected><RegisteredTypePage key="spec" docType="spec" /></Protected>} />
       <Route path="/specs/org" element={<Protected><OrgTypePage key="spec-org" docType="spec" /></Protected>} />
+      <Route path="/specs/create" element={<Protected perm="spec"><FormCreatePage key="spec-create" docType="spec" /></Protected>} />
+      <Route path="/specs/created" element={<Protected perm="spec"><GeneratedListPage key="spec-created" docType="spec" /></Protected>} />
       <Route path="/brochures" element={<Protected><RegisteredTypePage key="brochure" docType="brochure" /></Protected>} />
       <Route path="/brochures/org" element={<Protected><OrgTypePage key="brochure-org" docType="brochure" /></Protected>} />
       <Route path="/documents/:id" element={<Protected><DocumentPage /></Protected>} />
       <Route path="/guides" element={<Protected><GuidesPage /></Protected>} />
       <Route path="/guides/org" element={<Protected><OrgTypePage key="guide-org" docType="guide" /></Protected>} />
       <Route path="/guides/share" element={<Protected><GuideSharePage /></Protected>} />
+      <Route path="/guides/create" element={<Protected perm="guide"><GuideCreatePage /></Protected>} />
+      <Route path="/guides/created" element={<Protected perm="guide"><CreatedGuidesPage /></Protected>} />
       <Route path="/guides/:id" element={<Protected><GuidePage /></Protected>} />
       <Route path="/partner-guides/:id" element={<Protected><PartnerGuidePage /></Protected>} />
       <Route path="/shared" element={<Protected><SharedPage /></Protected>} />
       <Route path="/quotes" element={<Protected><RegisteredTypePage key="quote" docType="quote" /></Protected>} />
       <Route path="/quotes/org" element={<Protected><OrgTypePage key="quote-org" docType="quote" /></Protected>} />
       <Route path="/quotes/work" element={<Protected><QuotesPage /></Protected>} />
+      <Route path="/quotes/create" element={<Protected perm="quote"><FormCreatePage key="quote-create" docType="quote" /></Protected>} />
+      <Route path="/quotes/created" element={<Protected perm="quote"><GeneratedListPage key="quote-created" docType="quote" /></Protected>} />
       <Route path="/community" element={<Protected><CommunityPage /></Protected>} />
       <Route path="/community/:vendorId" element={<Protected><DomainPage /></Protected>} />
       <Route path="/community/posts/:id" element={<Protected><PostPage /></Protected>} />
@@ -68,7 +75,8 @@ export default function App() {
 
 const SETTINGS_ROLES: Role[] = ["platform_admin", "partner_admin"];
 
-function Protected({ children, roles, sales }: { children: ReactNode; roles?: Role[]; sales?: boolean }) {
+/** perm: 그 권한(업무 구분 기본 + 승인된 권한)이 없으면 홈으로 보낸다. 예) 규격서·견적서 생성은 영업, 가이드 생성은 엔지니어. */
+function Protected({ children, roles, sales, perm }: { children: ReactNode; roles?: Role[]; sales?: boolean; perm?: string }) {
   const { me, loading } = useAuth();
   if (loading) return <p className="page">불러오는 중…</p>;
   if (!me) return <Navigate to="/login" replace />;
@@ -78,6 +86,7 @@ function Protected({ children, roles, sales }: { children: ReactNode; roles?: Ro
   const isSales = me.track === "sales";
   if (sales && !isSales && !isAdmin) return <Navigate to="/" replace />;
   const can = (p: string) => isAdmin || me.permissions.includes(p);
+  if (perm && !can(perm)) return <Navigate to="/" replace />;
 
   return (
     <>
@@ -89,9 +98,9 @@ function Protected({ children, roles, sales }: { children: ReactNode; roles?: Ro
           <NavLink to="/" end>홈</NavLink>
           <DocsMenu />
           {/* 등록 권한이 있으면 '등록한 ○○', 없으면 같은 조직이 올린 것을 내려받기만 하는 '등록된 ○○' */}
-          <TypeMenu base="/specs" label="규격서" canEdit={can("spec")} />
+          <TypeMenu base="/specs" label="규격서" canEdit={can("spec")} create />
           <GuidesMenu canEdit={can("guide")} />
-          <TypeMenu base="/quotes" label="견적서" canEdit={can("quote")} work={can("quote")} />
+          <TypeMenu base="/quotes" label="견적서" canEdit={can("quote")} create work={can("quote")} />
           <TypeMenu base="/brochures" label="브로슈어" canEdit={can("brochure")} />
           <NavLink to="/community">커뮤니티</NavLink>
           <RequestsMenu isAdmin={isAdmin} />
@@ -124,11 +133,15 @@ function DocsMenu() {
 
 /** 상단 '규격서'·'견적서'·'브로슈어' 메뉴: 누르면 등록한(권한 없으면 등록된) ○○, 마우스를 올리면 그것과 조직 요청 ○○.
  *  견적서는 권한이 있으면 '견적서 작업'(양식·로고·자료·생성)도 보인다. */
-function TypeMenu({ base, label, canEdit, work = false }: { base: string; label: string; canEdit: boolean; work?: boolean }) {
+function TypeMenu({ base, label, canEdit, create = false, work = false }: { base: string; label: string; canEdit: boolean; create?: boolean; work?: boolean }) {
   const { pathname } = useLocation();
+  // 생성·생성한 ○○ 은 그 종류의 권한이 있을 때만 (엔지니어·영업 롤 구분: 규격서·견적서는 영업)
+  const making = create && canEdit;
   const items = [
+    ...(making ? [{ key: "create", label: `${label} 생성`, to: `${base}/create`, active: pathname === `${base}/create` }] : []),
     { key: "registered", label: `${canEdit ? "등록한" : "등록된"} ${label}`, to: base, active: pathname === base },
     { key: "org", label: `조직 요청 ${label}`, to: `${base}/org`, active: pathname === `${base}/org` },
+    ...(making ? [{ key: "created", label: `생성한 ${label}`, to: `${base}/created`, active: pathname === `${base}/created` }] : []),
     ...(work ? [{ key: "work", label: `${label} 작업`, to: `${base}/work`, active: pathname === `${base}/work` }] : []),
   ];
   return <HoverMenu to={base} label={label} items={items} />;
@@ -139,8 +152,10 @@ function GuidesMenu({ canEdit }: { canEdit: boolean }) {
   const { pathname, search } = useLocation();
   const items = [
     ...(canEdit ? [{ key: "upload", label: "가이드 등록", to: "/documents?type=guide", active: pathname === "/documents" && search.includes("type=guide") }] : []),
+    ...(canEdit ? [{ key: "create", label: "가이드 생성", to: "/guides/create", active: pathname === "/guides/create" }] : []),
     { key: "registered", label: canEdit ? "등록한 가이드" : "등록된 가이드", to: "/guides", active: pathname === "/guides" },
     { key: "org", label: "조직 요청 가이드", to: "/guides/org", active: pathname === "/guides/org" },
+    ...(canEdit ? [{ key: "created", label: "생성한 가이드", to: "/guides/created", active: pathname === "/guides/created" }] : []),
     ...(canEdit ? [{ key: "share", label: "가이드 공유", to: "/guides/share", active: pathname === "/guides/share" }] : []),
   ];
   return <HoverMenu to="/guides" label="가이드" items={items} alsoActive={pathname === "/shared"} />;

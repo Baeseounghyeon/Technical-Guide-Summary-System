@@ -721,6 +721,29 @@ class DocumentUserShare(Base):
     sharer: Mapped[User | None] = relationship(foreign_keys=[shared_by])
 
 
+class GeneratedDocument(Base):
+    """규격서·견적서 생성 결과. 입력값(fields)을 저장해 두고 PDF·Word 는 받을 때 만든다.
+    같은 문서를 고쳐 다시 만들면 root_id 가 같은 다음 버전이 되어 이력이 쌓인다."""
+
+    __tablename__ = "generated_documents"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    doc_type: Mapped[str] = mapped_column(String(20), index=True)  # spec | quote
+    title: Mapped[str] = mapped_column(String(300))
+    fields: Mapped[dict] = mapped_column(JSON, default=dict)
+    source_document_id: Mapped[int | None] = mapped_column(ForeignKey("source_documents.id", ondelete="SET NULL"))
+    root_id: Mapped[int | None] = mapped_column(ForeignKey("generated_documents.id", ondelete="SET NULL"), index=True)
+    based_on_id: Mapped[int | None] = mapped_column(ForeignKey("generated_documents.id", ondelete="SET NULL"))
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    partner_id: Mapped[int | None] = mapped_column(ForeignKey("partners.id"))
+    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    source_document: Mapped["SourceDocument | None"] = relationship()
+    creator: Mapped[User] = relationship()
+    partner: Mapped[Partner | None] = relationship()
+
+
 class PermissionRequest(Base):
     """권한 승인 요청: 업무 구분 밖의 권한(예: 영업이 가이드 등록·요약)을 관리자에게 신청한다. 승인되면 그 권한이 더해진다."""
 
