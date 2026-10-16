@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import logoUrl from "./assets/unipoint-logo.png";
 import { useAuth } from "./auth";
+import ColumnResizer from "./ColumnResizer";
 import { DOC_TYPES, ROLE_LABELS, TRACK_LABELS } from "./labels";
 import AdminPage from "./pages/AdminPage";
 import CommunityPage from "./pages/CommunityPage";
@@ -79,6 +80,7 @@ function Protected({ children, roles, sales }: { children: ReactNode; roles?: Ro
       </header>
       <main className="page">{children}</main>
       <HashScroll />
+      <ColumnResizer />
     </>
   );
 }

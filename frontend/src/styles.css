@@ -320,3 +320,81 @@ details summary { cursor: pointer; color: var(--accent); font-weight: 600; margi
 /* 상단 '문서' 메뉴 펼침 목록 (body 에 띄움) */
 .nav-dropdown { position: fixed; right: auto; transform: translateX(-50%); min-width: 160px; z-index: 60; }
 .dropdown-item.active { color: var(--accent); font-weight: 700; }
+
+/* 표 안의 작은 아이콘 버튼 (다운로드 등) */
+.icon-button.sm { width: 30px; height: 30px; }
+.icon-button:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
+
+/* 가운데 뜨는 창 (다운로드 형식 선택 등) */
+.modal-backdrop {
+  position: fixed; inset: 0; z-index: 80; background: rgba(0, 11, 52, 0.45);
+  display: grid; place-items: center; padding: 16px;
+}
+.modal {
+  width: min(520px, 100%); max-height: calc(100vh - 32px); overflow: auto;
+  background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow-lg); padding: 20px 22px;
+}
+.format-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-top: 12px; }
+.format-option {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 12px 14px; text-align: left;
+  border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--surface);
+}
+.format-option:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-soft); }
+.format-option:disabled { opacity: 0.55; cursor: not-allowed; }
+.format-option .muted { font-size: 0.78rem; }
+
+/* 열 너비 조절 (ColumnResizer): 머리 칸 오른쪽 경계를 끈다. 좁히면 내용은 줄바꿈된다. */
+table.table-resizable th { position: relative; }
+table.table-resizable th, table.table-resizable td { overflow: hidden; overflow-wrap: anywhere; white-space: normal !important; }
+.col-resizer {
+  position: absolute; top: 0; right: 0; width: 7px; height: 100%; cursor: col-resize; z-index: 1;
+  border-right: 2px solid transparent;
+}
+.col-resizer:hover, .col-resizer.dragging { border-right-color: var(--accent); }
+body.col-resizing { cursor: col-resize; user-select: none; }
+
+/* ---------- 홈 달력 ---------- */
+.calendar-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.calendar-head .actions button:not(.primary) { min-width: 38px; }
+.calendar-legend { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; margin: 10px 0 12px; font-size: 0.84rem; color: var(--text-2); }
+.calendar-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+.calendar-weekdays, .calendar-week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.calendar-weekdays { border-top: 2px solid var(--navy); }
+.calendar-weekdays div { padding: 8px 6px; font-size: 0.8rem; font-weight: 700; color: var(--text-2); text-align: center; border-bottom: 1px solid var(--border); }
+.calendar-weekdays .sun { color: var(--danger); }
+.calendar-weekdays .sat { color: var(--accent); }
+.calendar-week { min-height: 104px; border-bottom: 1px solid var(--border); row-gap: 2px; padding-bottom: 4px; }
+.calendar-day {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 4px 6px; min-width: 0;
+  background: none; border: none; border-left: 1px solid var(--border); border-radius: 0; text-align: left; cursor: pointer; font-weight: 400;
+}
+.calendar-day:first-child { border-left: none; }
+.calendar-day:hover { background: var(--surface-2); }
+.calendar-day .day-num { font-family: "Montserrat", sans-serif; font-weight: 600; font-size: 0.86rem; color: var(--text); }
+.calendar-day.sun .day-num, .calendar-day.sun .holiday-name { color: var(--danger); }
+.calendar-day.sat .day-num { color: var(--accent); }
+.calendar-day.other-month { background: #fbfbfc; }
+.calendar-day.other-month .day-num, .calendar-day.other-month .holiday-name { opacity: 0.45; }
+.calendar-day.today .day-num {
+  background: var(--accent); color: #fff; border-radius: 999px; min-width: 24px; height: 24px; display: grid; place-items: center; padding: 0 6px;
+}
+.calendar-day .day-top { display: flex; align-items: center; gap: 6px; width: 100%; min-width: 0; }
+.calendar-day .holiday-name { font-size: 0.7rem; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.calendar-day .more { margin-top: auto; font-size: 0.72rem; color: var(--muted); }
+.calendar-bar {
+  z-index: 1; height: 22px; margin: 0 3px; padding: 0 8px; border: none; border-radius: 4px; color: #fff;
+  font-size: 0.76rem; font-weight: 600; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer;
+}
+.calendar-bar.cont-before { margin-left: 0; border-top-left-radius: 0; border-bottom-left-radius: 0; }
+.calendar-bar.cont-after { margin-right: 0; border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.calendar-bar:hover { filter: brightness(1.08); }
+.purpose-picker { display: flex; flex-wrap: wrap; gap: 8px; }
+.purpose-chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border: 1px solid var(--border-strong);
+  border-radius: 999px; cursor: pointer; font-size: 0.86rem; font-weight: 600;
+}
+.purpose-chip::before { content: ""; width: 10px; height: 10px; border-radius: 3px; background: var(--chip); }
+.purpose-chip input { display: none; }
+.purpose-chip.selected { border-color: var(--chip); background: color-mix(in srgb, var(--chip) 12%, white); }
+/* 좁힌 열에서도 버튼·상태 표시는 글자 단위로 쪼개지지 않게 */
+table.table-resizable td :is(button, .badge) { white-space: nowrap; overflow-wrap: normal; }

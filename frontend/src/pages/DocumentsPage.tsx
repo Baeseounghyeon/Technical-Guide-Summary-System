@@ -1,7 +1,7 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api } from "../api";
+import { api, download } from "../api";
 import { useAuth } from "../auth";
 import { DOC_TYPES, GUIDE_KINDS, STATUS_LABELS, type DocTypeKey, type GuideKindKey } from "../labels";
 import type { DocumentSummary } from "../types";
@@ -65,6 +65,14 @@ export default function DocumentsPage() {
 
 /** 문서 표 (문서 화면의 종류별 탭과 가이드 화면이 함께 쓴다). query 는 /documents 목록 API 의 검색 조건. */
 export function DocumentTable({ query, showGuideKind = false }: { query: string; showGuideKind?: boolean }) {
+  const { me } = useAuth();
+  const isAdmin = me?.role === "platform_admin";
+  const queryClient = useQueryClient();
+  const [downloading, setDownloading] = useState<DocumentSummary | null>(null);
+  const remove = useMutation({
+    mutationFn: (id: number) => api(`/documents/${id}`, { method: "DELETE" }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["documents"] }),
+  });
   const docs = useQuery({
     queryKey: ["documents", query],
     queryFn: () => api<DocumentSummary[]>(`/documents?${query}`),
@@ -75,12 +83,15 @@ export function DocumentTable({ query, showGuideKind = false }: { query: string;
   if (!docs.data?.length) return <p className="muted">등록된 문서가 없습니다.</p>;
   return (
     <div className="table-wrap">
+      {remove.error && <p className="error">{remove.error.message}</p>}
+      {downloading && <DownloadDialog doc={downloading} onClose={() => setDownloading(null)} />}
       <table style={{ minWidth: 900 }}>
         <thead>
           <tr>
             <th>문서 이름</th>
             {showGuideKind && <th>가이드 종류</th>}
-            <th>설명</th><th>벤더</th><th>등록자</th><th>등록 날짜</th><th>형식·분량</th><th>상태</th>
+            <th>설명</th><th>벤더</th><th>등록자</th><th>등록 날짜</th><th>형식·분량</th><th>상태</th><th>다운로드</th>
+            {isAdmin && <th>관리</th>}
           </tr>
         </thead>
         <tbody>
@@ -96,10 +107,99 @@ export function DocumentTable({ query, showGuideKind = false }: { query: string;
               <td style={{ whiteSpace: "nowrap" }}>{new Date(d.created_at).toLocaleDateString()}</td>
               <td style={{ whiteSpace: "nowrap" }}>{d.source_type.toUpperCase()}{d.page_count ? ` · ${d.page_count}쪽` : ""}</td>
               <td><span className={`badge ${d.status}`}>{STATUS_LABELS[d.status]}</span></td>
+              <td>
+                <button className="icon-button sm" title="다운로드" aria-label={`${d.title ?? "문서"} 다운로드`} onClick={() => setDownloading(d)}>
+                  <DownloadIcon />
+                </button>
+              </td>
+              {isAdmin && (
+                <td>
+                  <button
+                    className="link danger-link"
+                    disabled={remove.isPending}
+                    onClick={() =>
+                      window.confirm(`'${d.title ?? "문서"}' 문서를 삭제할까요?
+목차, 요약 가이드, 생성한 문서 기록도 함께 지워지며 되돌릴 수 없습니다.`) &&
+                      remove.mutate(d.id)
+                    }
+                  >
+                    삭제
+                  </button>
+                </td>
+              )}
             </tr>
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function DownloadIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 3v12" />
+      <path d="m7 10 5 5 5-5" />
+      <path d="M5 21h14" />
+    </svg>
+  );
+}
+
+const FORMATS = [
+  { key: "original", label: "원본 파일", hint: "올린 파일 그대로" },
+  { key: "pptx", label: "PowerPoint", hint: ".pptx · 목차별 슬라이드" },
+  { key: "docx", label: "Word", hint: ".docx · 목차별 본문" },
+  { key: "xlsx", label: "Excel", hint: ".xlsx · 목차별 표" },
+  { key: "pdf", label: "PDF", hint: ".pdf · 원본이 PDF 면 원본 그대로" },
+] as const;
+
+/** 다운로드 형식 고르기: 원본 또는 분석한 목차별 본문으로 만든 PPT·Word·Excel·PDF 를 내 PC 로 받는다. */
+function DownloadDialog({ doc, onClose }: { doc: DocumentSummary; onClose: () => void }) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  async function get(format: string) {
+    setBusy(format);
+    setError(null);
+    try {
+      await download(`/documents/${doc.id}/download?format=${format}`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "내려받지 못했습니다.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const parsed = doc.status === "parsed";
+  return (
+    <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="modal" role="dialog" aria-modal="true" aria-label="다운로드 형식 선택">
+        <div className="summary-head">
+          <h2 style={{ margin: 0 }}>다운로드</h2>
+          <button className="link" onClick={onClose} aria-label="닫기">닫기</button>
+        </div>
+        <p className="muted">{doc.title ?? doc.url}</p>
+        <div className="format-grid">
+          {FORMATS.map((f) => {
+            const unavailable = f.key === "original" ? doc.source_type === "url" : !parsed;
+            return (
+              <button key={f.key} className="format-option" disabled={!!busy || unavailable} onClick={() => get(f.key)}>
+                <strong>{busy === f.key ? "만드는 중…" : f.label}</strong>
+                <span className="muted">{unavailable ? (f.key === "original" ? "원본 파일 없음" : "분석 후 가능") : f.hint}</span>
+              </button>
+            );
+          })}
+        </div>
+        <p className="muted" style={{ marginTop: 12, fontSize: "0.82rem" }}>
+          PowerPoint·Word·Excel 은 분석한 목차별 본문으로 새로 만든 파일이라 원본의 그림·표 서식은 빠집니다.
+        </p>
+        {error && <p className="error">{error}</p>}
+      </div>
     </div>
   );
 }
