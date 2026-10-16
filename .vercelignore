@@ -1,0 +1,11 @@
+# vercel CLI 로 직접 올릴 때도 비밀값·로컬 데이터·가상환경은 올리지 않는다
+.env
+.env.*
+**/.env
+backend/.venv
+backend/data
+backend/storage
+**/node_modules
+frontend/dist
+**/__pycache__
+.claude
