@@ -38,6 +38,7 @@ from ..schemas import (
 from ..services.jobs import enqueue
 from ..services.parsing import SUPPORTED_EXTENSIONS
 from ..services.storage import get_storage
+from ..services.usage import charge, pages_for_chars
 from .uploads import store_upload
 
 router = APIRouter(prefix="/api", tags=["파트너 가이드 비교"])
@@ -75,7 +76,13 @@ def upload_partner_guide(
     )
     db.add(pg)
     db.flush()
-    enqueue(db, JobKind.PARSE_PARTNER_GUIDE, {"partner_guide_id": pg.id, "fallback_title": Path(original_name).stem})
+    # 목차 매칭에 AI 호출 1회 (목차 제목·발췌만 보내므로 1쪽으로 계산)
+    record = charge(db, user, "match", 1, partner_guide_id=pg.id)
+    enqueue(
+        db,
+        JobKind.PARSE_PARTNER_GUIDE,
+        {"partner_guide_id": pg.id, "fallback_title": Path(original_name).stem, "usage_id": record.id},
+    )
     db.commit()
     return pg
 
@@ -135,8 +142,12 @@ def start_compare(pg_id: int, user: User = Depends(get_active_user), db: Session
         raise HTTPException(status.HTTP_409_CONFLICT, "목차 매칭이 끝난 뒤에 비교할 수 있습니다.")
     if not any(s.matched_section_id for s in pg.sections):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "벤더 원본과 매칭된 목차가 없습니다.")
+    # 비교는 파트너 본문과 대응하는 벤더 원본을 함께 보내므로 둘의 글자 수로 계산한다.
+    matched = [s for s in pg.sections if s.matched_section_id and s.text.strip()]
+    chars = sum(len(s.text) + len(s.matched_section.text) for s in matched)
+    record = charge(db, user, "compare", pages_for_chars(chars), partner_guide_id=pg.id)
     pg.status = PartnerGuideStatus.COMPARING
-    enqueue(db, JobKind.COMPARE_PARTNER_GUIDE, {"partner_guide_id": pg.id})
+    enqueue(db, JobKind.COMPARE_PARTNER_GUIDE, {"partner_guide_id": pg.id, "usage_id": record.id})
     db.commit()
     return pg
 

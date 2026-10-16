@@ -29,12 +29,19 @@ class Settings(BaseSettings):
     # LLM_PROVIDER=claude: Claude API
     anthropic_api_key: str | None = None
     claude_model: str = "claude-opus-5-5"
-    claude_effort: str = "medium"
+    claude_effort: str = "medium"  # 파트너 가이드 오류 탐지·목차 매칭 (정확도가 중요)
+    claude_summary_effort: str = "low"  # 목차별 요약·개요 (형식이 정해진 작업이라 낮춰 비용 절감)
 
     # LLM_PROVIDER=claude_code: Claude Code CLI + 본인 구독 (개인 사용 전용)
     claude_code_path: str = "claude"  # PATH 에서 못 찾으면 %USERPROFILE%\.local\bin\claude.exe 를 확인
     claude_code_model: str = "opus"  # opus | sonnet ... 구독 사용량을 아끼려면 sonnet
     claude_code_timeout_seconds: int = 900
+
+    # AI 사용 한도 (외부 사용자가 많이 써도 비용이 통제되게). 플랫폼 관리자는 회사 한도·재생성 한도에서 제외.
+    chars_per_page: int = 2000  # 사용량 '쪽' 환산 기준 (원문 글자 수)
+    default_monthly_page_quota: int = 300  # 회사별 월 처리량 기본값 (쪽). 관리자 화면에서 회사별로 바꿀 수 있다
+    daily_regenerate_limit: int = 30  # 사용자별 하루 '코멘트로 재생성' 횟수
+    monthly_budget_usd: float = 0  # 전체 월 예산(달러). 넘으면 모든 AI 요청을 막는다. 0 이면 제한 없음
 
     # 생성 문서(표지·이력 표)에 찍히는 날짜의 시간대
     display_timezone: str = "Asia/Seoul"

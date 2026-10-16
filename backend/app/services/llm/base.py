@@ -1,3 +1,4 @@
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Protocol
 
@@ -31,6 +32,26 @@ def language_native_name(code: str) -> str:
 
 class LLMError(Exception):
     pass
+
+
+@dataclass
+class LLMUsage:
+    """API 호출 한 번의 토큰 사용량 (비용 계산용)."""
+
+    model: str
+    input_tokens: int
+    output_tokens: int
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
+
+
+# 작업 처리기가 작업마다 빈 목록을 넣어 두면, API 엔진이 호출할 때마다 사용량을 여기에 쌓는다.
+usage_meter: ContextVar[list[LLMUsage] | None] = ContextVar("usage_meter", default=None)
+
+
+def record_usage(usage: LLMUsage) -> None:
+    if (meter := usage_meter.get()) is not None:
+        meter.append(usage)
 
 
 @dataclass

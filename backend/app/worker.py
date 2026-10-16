@@ -8,6 +8,8 @@ from .db import SessionLocal, init_db
 from .models import Job, JobStatus, utcnow
 from .services.jobs import JobPaused, claim_next, has_time_for_llm_call, requeue_stale, set_deadline
 from .services import partner_review, pipeline
+from .services.llm.base import usage_meter
+from .services.usage import add_tokens
 
 HANDLERS = {**pipeline.HANDLERS, **partner_review.HANDLERS}
 
@@ -15,6 +17,21 @@ log = logging.getLogger("worker")
 
 
 def run_job(job_id: int) -> None:
+    # 이 작업에서 쓴 AI 토큰을 모아 요청 때 남긴 사용 기록(payload 의 usage_id)에 비용으로 더한다.
+    meter: list = []
+    token = usage_meter.set(meter)
+    try:
+        _run_job(job_id)
+    finally:
+        usage_meter.reset(token)
+        if meter:
+            with SessionLocal() as db:
+                job = db.get(Job, job_id)
+                add_tokens(db, (job.payload or {}).get("usage_id"), meter, kind=job.kind)
+                db.commit()
+
+
+def _run_job(job_id: int) -> None:
     with SessionLocal() as db:
         job = db.get(Job, job_id)
         handle, on_failure = HANDLERS[job.kind]

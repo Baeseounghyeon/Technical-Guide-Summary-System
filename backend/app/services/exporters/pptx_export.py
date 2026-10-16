@@ -48,8 +48,12 @@ def build_pptx(ctx: ExportContext, out_path: Path) -> None:
     for section in ctx.sections:
         if not section.content:
             continue
-        bullets = section.key_steps or _markdown_lines(section.content)
-        bullets = bullets + [f"⚠ {w}" for w in section.warnings]
+        if section.key_steps:
+            bullets = section.key_steps + [f"⚠ {w}" for w in section.warnings]
+        else:
+            # 본문 줄에 이미 들어 있는 주의사항('> ⚠ ...')은 한 번만 나오게 한다
+            bullets = _markdown_lines(section.content)
+            bullets += [f"⚠ {w}" for w in section.warnings if w not in section.content]
         label = page_label(section)
         if label:
             bullets.append(f"({label})")

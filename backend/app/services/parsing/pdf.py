@@ -10,13 +10,48 @@ from .base import FRONT_MATTER_TITLE, ParsedDocument, ParsedSection, ParseError
 
 def parse_pdf(path: Path) -> ParsedDocument:
     with pymupdf.open(path) as pdf:
-        pages = [page.get_text("text") for page in pdf]
+        pages = _strip_running_lines([page.get_text("text") for page in pdf])
         if not any(p.strip() for p in pages):
             raise ParseError("텍스트를 추출할 수 없습니다. 스캔 이미지 PDF는 아직 지원하지 않습니다.")
         title = (pdf.metadata or {}).get("title") or None
         toc = [(lvl, t.strip(), p) for lvl, t, p in pdf.get_toc(simple=True) if p >= 1 and t.strip()]
-        sections = _sections_from_toc(toc, pages) if toc else _sections_from_fonts(pdf)
+        sections = _sections_from_toc(toc, pages) if toc else _sections_from_fonts(pdf, pages)
         return ParsedDocument(title=title, page_count=len(pages), sections=sections)
+
+
+# 페이지 위·아래 몇 줄 안에서, 여러 페이지에 똑같이(숫자만 다르게) 반복되는 줄은 머리말·꼬리말로 본다.
+_EDGE_TOP, _EDGE_BOTTOM = 2, 3
+_DIGITS = re.compile(r"\d+")
+
+
+def _edge_key(line: str) -> str:
+    return _DIGITS.sub("#", " ".join(line.split()))
+
+
+def _strip_running_lines(pages: list[str]) -> list[str]:
+    """쪽마다 반복되는 머리말·꼬리말(문서명, 저작권, 쪽 번호, 장 제목)을 지운다.
+
+    요약 품질을 해치고 입력 비용만 늘리므로 요약 전에 뺀다. 본문 속 반복 문장을 지우지 않도록
+    각 쪽의 위·아래 가장자리 줄만 보고, 전체 쪽의 30% 이상(최소 3쪽)에서 반복될 때만 지운다.
+    """
+    split = [[ln for ln in page.splitlines()] for page in pages]
+
+    def edges(lines: list[str]) -> list[int]:
+        idx = [i for i, ln in enumerate(lines) if ln.strip()]
+        return sorted(set(idx[:_EDGE_TOP] + idx[-_EDGE_BOTTOM:]))
+
+    counts: Counter[str] = Counter()
+    for lines in split:
+        counts.update({_edge_key(lines[i]) for i in edges(lines)})
+    threshold = max(3, int(len(pages) * 0.3))
+    running = {k for k, n in counts.items() if n >= threshold}
+    if not running:
+        return pages
+    cleaned = []
+    for lines in split:
+        drop = {i for i in edges(lines) if _edge_key(lines[i]) in running}
+        cleaned.append("\n".join(ln for i, ln in enumerate(lines) if i not in drop))
+    return cleaned
 
 
 def _sections_from_toc(toc: list[tuple[int, str, int]], pages: list[str]) -> list[ParsedSection]:
@@ -71,8 +106,10 @@ def _title_pattern(title: str) -> re.Pattern[str]:
     return re.compile(r"\s+".join(re.escape(w) for w in words), re.IGNORECASE)
 
 
-def _sections_from_fonts(pdf: pymupdf.Document) -> list[ParsedSection]:
+def _sections_from_fonts(pdf: pymupdf.Document, cleaned_pages: list[str]) -> list[ParsedSection]:
     """책갈피 목차가 없을 때 본문보다 큰 글꼴의 짧은 줄을 제목으로 추정한다."""
+    # 머리말·꼬리말로 지운 줄은 제목·본문 후보에서도 뺀다 (쪽별로 남은 줄 목록과 대조)
+    kept = [Counter(" ".join(ln.split()) for ln in page.splitlines() if ln.strip()) for page in cleaned_pages]
     lines: list[tuple[int, float, str]] = []
     sizes: Counter[float] = Counter()
     for page_no, page in enumerate(pdf, start=1):
@@ -80,8 +117,10 @@ def _sections_from_fonts(pdf: pymupdf.Document) -> list[ParsedSection]:
             for line in block.get("lines", []):
                 spans = line["spans"]
                 text = "".join(s["text"] for s in spans).strip()
-                if not text:
+                key = " ".join(text.split())
+                if not text or kept[page_no - 1][key] <= 0:
                     continue
+                kept[page_no - 1][key] -= 1
                 size = round(max(s["size"] for s in spans), 1)
                 sizes[size] += len(text)
                 lines.append((page_no, size, text))

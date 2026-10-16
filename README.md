@@ -126,6 +126,28 @@ cd backend; .\.venv\Scripts\python -m app.migrate_to_postgres
 
 업로드·생성 파일은 DB가 아니라 `backend/storage` 폴더에 그대로 있습니다. SQLite로 돌아가려면 `.env`의 `DATABASE_URL` 줄을 지우면 됩니다(옮긴 뒤 바뀐 데이터는 SQLite에 없음).
 
+## AI 사용 비용 관리
+
+외부 사용자가 웹에서 문서를 많이 넣어도 비용이 통제되도록 다음을 적용했습니다.
+
+**한 번 요약할 때의 비용 줄이기**
+- 모델은 요약 본문 하나만 씁니다. 절차·주의사항 목록은 본문의 번호 목록과 `> ⚠` 줄에서 코드로 뽑습니다(같은 내용을 두 번 쓰지 않음).
+- 요약·개요는 `CLAUDE_SUMMARY_EFFORT=low`, 정확도가 중요한 오류 탐지·목차 매칭은 `CLAUDE_EFFORT=medium`.
+- PDF의 쪽마다 반복되는 머리말·꼬리말(문서명·저작권·쪽 번호)은 요약 전에 지웁니다.
+- 같은 문서를 같은 언어로 다시 요약할 수 없습니다(기존 가이드에서 이어서 검토).
+
+**사용 한도** (플랫폼 관리자는 회사·재생성 한도에서 제외, 전체 예산은 적용)
+
+| 설정 | 기본값 | 내용 |
+|---|---|---|
+| `DEFAULT_MONTHLY_PAGE_QUOTA` | 300 | 회사별 월 처리량(쪽). 관리자 화면에서 회사별로 바꿀 수 있음 |
+| `CHARS_PER_PAGE` | 2000 | 원문 2,000자 = 1쪽으로 계산 |
+| `DAILY_REGENERATE_LIMIT` | 30 | 사용자별 하루 '코멘트로 재생성' 횟수 |
+| `MONTHLY_BUDGET_USD` | 0(제한 없음) | 전체 월 예산(달러). 실제 토큰으로 계산한 비용이 넘으면 모든 AI 요청을 막음 |
+
+문서 화면은 요약 전에 예상 사용량과 남은 양을 보여 주고, 관리자 화면 "AI 사용량 · 회사별 한도"에서 이번 달 비용과 회사별 사용량을 봅니다.
+Anthropic 콘솔(Limits)의 월 사용 한도도 함께 걸어 두면 이중으로 막을 수 있습니다.
+
 ## Vercel 배포 (화면 + 서버)
 
 화면(React)은 정적 파일로, 서버(FastAPI)는 Python 함수(`api/index.py`)로 한 프로젝트에 올라갑니다. 설정은 `vercel.json`.
@@ -150,6 +172,7 @@ Vercel 함수는 상주하지 않으므로 다음처럼 동작합니다.
 | `LLM_CONCURRENCY` | `4` |
 | `JOB_TIME_BUDGET_SECONDS` | `240` |
 | `CRON_SECRET` | 임의 문자열 (로컬 `.env`의 `CRON_SECRET`과 같은 값) |
+| `MONTHLY_BUDGET_USD` | 전체 월 예산(달러), 예: `30` |
 
 `ADMIN_EMAIL`/`ADMIN_PASSWORD`는 넣지 않습니다(관리자 계정이 이미 DB에 있음). 구독 엔진(`claude_code`)은 Vercel에서 실행되지 않습니다.
 

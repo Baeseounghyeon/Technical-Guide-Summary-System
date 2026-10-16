@@ -3,16 +3,17 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { GRANT_STATUS, ROLE_LABELS } from "../labels";
-import type { AccessGrant, AdminUser, Partner, Role, Vendor } from "../types";
+import type { AccessGrant, AdminUser, Partner, PartnerUsage, Role, UsageOverview, Vendor } from "../types";
 
 export default function AdminPage() {
   return (
     <>
       <div className="page-header">
         <h1>관리자</h1>
-        <p className="muted">가입자 승인·수정·삭제, 다른 도메인 권한 신청, 파트너사와 벤더 도메인을 관리합니다.</p>
+        <p className="muted">가입자 승인·수정·삭제, AI 사용량과 회사별 한도, 다른 도메인 권한 신청, 파트너사와 벤더 도메인을 관리합니다.</p>
       </div>
       <Members />
+      <AiUsage />
       <AccessRequests />
       <PartnersAndVendors />
     </>
@@ -356,5 +357,75 @@ function PartnersAndVendors() {
         </table>
       </div>
     </section>
+  );
+}
+
+function AiUsage() {
+  const usage = useQuery({ queryKey: ["admin", "usage"], queryFn: () => api<UsageOverview>("/admin/usage") });
+  if (!usage.data) return null;
+  const u = usage.data;
+  const usd = (v: number) => `$${v.toFixed(2)}`;
+  return (
+    <section className="card">
+      <h2>AI 사용량 · 회사별 한도</h2>
+      <p className="muted">
+        {u.month} 추정 비용 <strong>{usd(u.cost_usd)}</strong>
+        {u.budget_usd ? ` / 월 예산 ${usd(u.budget_usd)}` : " (월 예산 제한 없음)"} · 요약 엔진 {u.llm_provider}
+        <br />
+        회사 기본 한도 월 {u.default_quota_pages.toLocaleString()}쪽 · 재생성 사용자당 하루 {u.daily_regenerate_limit}회 · 1쪽 = 원문{" "}
+        {u.chars_per_page.toLocaleString()}자. 플랫폼 관리자는 회사 한도에서 제외됩니다
+        {u.unassigned.used_pages ? ` (이번 달 ${u.unassigned.used_pages.toLocaleString()}쪽, ${usd(u.unassigned.cost_usd)})` : ""}.
+      </p>
+      <div className="table-wrap">
+        <table style={{ minWidth: 720 }}>
+          <thead>
+            <tr>
+              <th>회사</th>
+              <th>이번 달 사용 / 한도</th>
+              <th>토큰 (입력 / 출력)</th>
+              <th>추정 비용</th>
+              <th>월 한도 변경 (쪽)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {u.partners.map((p) => <PartnerUsageRow key={p.id} row={p} />)}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function PartnerUsageRow({ row }: { row: PartnerUsage }) {
+  const queryClient = useQueryClient();
+  const [value, setValue] = useState(row.custom_quota ? String(row.quota_pages) : "");
+  const save = useMutation({
+    mutationFn: (quota: number | null) =>
+      api(`/admin/partners/${row.id}/quota`, { method: "PUT", json: { monthly_page_quota: quota } }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin", "usage"] }),
+  });
+  const ratio = row.quota_pages ? row.used_pages / row.quota_pages : 0;
+  return (
+    <tr>
+      <td>{row.name}</td>
+      <td className={ratio >= 1 ? "error" : ""}>
+        {row.used_pages.toLocaleString()} / {row.quota_pages.toLocaleString()}쪽{row.custom_quota ? "" : " (기본)"}
+      </td>
+      <td className="muted">{row.input_tokens.toLocaleString()} / {row.output_tokens.toLocaleString()}</td>
+      <td>${row.cost_usd.toFixed(2)}</td>
+      <td>
+        <form
+          className="form-row"
+          onSubmit={(e) => {
+            e.preventDefault();
+            save.mutate(value.trim() === "" ? null : Number(value));
+          }}
+        >
+          <input type="number" min={0} placeholder="기본값" value={value} onChange={(e) => setValue(e.target.value)} style={{ width: 90 }} />
+          <button disabled={save.isPending}>저장</button>
+        </form>
+        {save.error && <p className="error">{save.error.message}</p>}
+      </td>
+    </tr>
   );
 }

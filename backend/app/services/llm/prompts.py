@@ -1,6 +1,17 @@
 """요약 엔진(API / Claude Code 구독)이 함께 쓰는 지시문과 출력 형식."""
 
-from .base import FINDING_CATEGORIES, SEVERITIES, CompareInput, OverviewInput, SectionInput, TocEntry, language_name
+import re
+
+from .base import (
+    FINDING_CATEGORIES,
+    SEVERITIES,
+    CompareInput,
+    OverviewInput,
+    SectionInput,
+    SectionResult,
+    TocEntry,
+    language_name,
+)
 
 # 모든 요청에서 동일하게 유지되는 앞부분 (프롬프트 캐싱 대상). 날짜나 ID 같은 가변 값을 넣지 말 것.
 SYSTEM_PROMPT = """\
@@ -12,13 +23,17 @@ Rules:
 and product or feature names exactly as in the source. Do not translate them. For UI labels, keep the \
 original label and add a translation in parentheses when it helps.
 - Keep every warning, caution and important note, with its meaning intact.
-- Write procedures as ordered steps, with prerequisites first.
+- Write procedures as a numbered Markdown list (`1.`, `2.`, ...), with prerequisites first.
+- Write each warning, caution or important note once, as its own line starting with `> ⚠ `.
+- Say each fact once. Do not repeat steps or warnings elsewhere in the summary, and do not add an introduction, a closing remark or a restatement of the section title.
 - Use only information in the source text. Do not add facts, defaults or recommendations it does not contain.
-- Aim for roughly 10-25% of the source length while keeping everything an engineer needs to do the task.
-- If the section is only legal, marketing or navigation text, say so in one sentence.
+- Aim for roughly 10-20% of the source length while keeping everything an engineer needs to do the task.
+- If the section is only legal, marketing or navigation text, or only introduces its subsections, say so in one short sentence.
 - Use the glossary for consistent terminology when one is given.
 """
 
+# 출력은 요약 본문 하나뿐이다. 절차·주의사항 목록은 본문에서 코드로 뽑는다
+# (모델에게 목록을 따로 쓰게 하면 같은 내용을 두 번 써서 출력 비용이 늘어난다).
 SECTION_SCHEMA = {
     "type": "object",
     "properties": {
@@ -26,20 +41,24 @@ SECTION_SCHEMA = {
             "type": "string",
             "description": "Section summary in Markdown (lists, `code`, **bold**). No top-level heading.",
         },
-        "key_steps": {
-            "type": "array",
-            "items": {"type": "string"},
-            "description": "Ordered key procedure steps, empty if the section has no procedure.",
-        },
-        "warnings": {
-            "type": "array",
-            "items": {"type": "string"},
-            "description": "Warnings and cautions from the source, translated.",
-        },
     },
-    "required": ["summary_markdown", "key_steps", "warnings"],
+    "required": ["summary_markdown"],
     "additionalProperties": False,
 }
+
+_STEP_LINE = re.compile(r"^ {0,3}\d+[.)]\s+(.+)")
+_WARNING_LINE = re.compile(r"^\s*>\s*⚠\s*(.+)")
+
+
+def section_result(summary_markdown: str) -> SectionResult:
+    """요약 본문에서 번호 목록(절차)과 '> ⚠' 줄(주의사항)을 뽑아 결과를 만든다."""
+    lines = summary_markdown.splitlines()
+    return SectionResult(
+        summary_markdown=summary_markdown,
+        key_steps=[m.group(1).strip() for ln in lines if (m := _STEP_LINE.match(ln))],
+        warnings=[m.group(1).strip() for ln in lines if (m := _WARNING_LINE.match(ln))],
+    )
+
 
 OVERVIEW_SCHEMA = {
     "type": "object",

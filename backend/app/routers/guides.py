@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..deps import get_active_user, get_document_for_user, get_guide_for_user
+from ..deps import get_active_user, get_document_for_user, get_guide_for_user, is_admin
 from ..models import (
     DocStatus,
     Guide,
@@ -28,6 +28,7 @@ from ..schemas import (
     SummaryOut,
 )
 from ..services.jobs import enqueue
+from ..services.usage import charge, pages_for_chars
 
 router = APIRouter(prefix="/api", tags=["요약 가이드"])
 
@@ -42,12 +43,18 @@ def create_guide(
     targets = [s for s in doc.sections if s.included and s.text.strip()]
     if not targets:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "요약할 목차 항목이 없습니다.")
+    # 같은 문서를 같은 언어로 다시 요약하면 비용만 두 번 든다: 기존 가이드를 이어서 검토하게 한다.
+    if not is_admin(user) and any(g.target_language == body.target_language for g in doc.guides):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "이미 같은 언어로 만든 요약 가이드가 있습니다. 기존 가이드에서 이어서 검토하세요."
+        )
 
     guide = Guide(document=doc, target_language=body.target_language, created_by=user.id)
     guide.summaries = [SectionSummary(section=s) for s in targets]
     db.add(guide)
     db.flush()
-    enqueue(db, JobKind.SUMMARIZE_GUIDE, {"guide_id": guide.id})
+    record = charge(db, user, "summarize", pages_for_chars(sum(len(s.text) for s in targets)), guide_id=guide.id)
+    enqueue(db, JobKind.SUMMARIZE_GUIDE, {"guide_id": guide.id, "usage_id": record.id})
     db.commit()
     return guide
 
@@ -145,9 +152,14 @@ def regenerate_summary(
     summary = _summary(db, user, guide_id, summary_id)
     if summary.status in (SummaryStatus.GENERATING, SummaryStatus.PENDING):
         raise HTTPException(status.HTTP_409_CONFLICT, "이미 생성 중입니다.")
+    record = charge(db, user, "regenerate", pages_for_chars(len(summary.section.text)), guide_id=summary.guide_id)
     summary.status = SummaryStatus.GENERATING
     summary.guide.status = GuideStatus.REVIEWING
-    enqueue(db, JobKind.REGENERATE_SECTION, {"summary_id": summary.id, "comment": body.comment, "author_id": user.id})
+    enqueue(
+        db,
+        JobKind.REGENERATE_SECTION,
+        {"summary_id": summary.id, "comment": body.comment, "author_id": user.id, "usage_id": record.id},
+    )
     db.commit()
     return summary
 

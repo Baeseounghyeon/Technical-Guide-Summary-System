@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { LANGUAGES, STATUS_LABELS, languageLabel } from "../labels";
-import type { DocumentDetail, GuideBrief, Section } from "../types";
+import type { DocumentDetail, GuideBrief, Section, Usage } from "../types";
 
 export default function DocumentPage() {
   const id = Number(useParams().id);
@@ -16,13 +16,16 @@ export default function DocumentPage() {
     refetchInterval: (q) => (q.state.data && ["uploaded", "parsing"].includes(q.state.data.status) ? 2000 : false),
   });
   const [language, setLanguage] = useState("ko");
+  const usage = useQuery({ queryKey: ["usage", id], queryFn: () => api<Usage>(`/usage?document_id=${id}`) });
 
   const toggle = useMutation({
     mutationFn: (s: Section) => api<Section>(`/sections/${s.id}`, { method: "PATCH", json: { included: !s.included } }),
-    onSuccess: (updated) =>
+    onSuccess: (updated) => {
       queryClient.setQueryData<DocumentDetail>(key, (old) =>
         old && { ...old, sections: old.sections.map((s) => (s.id === updated.id ? updated : s)) },
-      ),
+      );
+      queryClient.invalidateQueries({ queryKey: ["usage", id] });
+    },
   });
 
   const startGuide = useMutation({
@@ -35,6 +38,10 @@ export default function DocumentPage() {
   const d = doc.data;
   const included = d.sections.filter((s) => s.included);
   const includedChars = included.reduce((sum, s) => sum + s.char_count, 0);
+  const u = usage.data;
+  const estimate = u?.estimate_pages ?? 0;
+  const overQuota = !!u && !u.unlimited && estimate > u.remaining_pages;
+  const blocked = !!u && (u.budget_exceeded || overQuota);
 
   return (
     <>
@@ -70,6 +77,16 @@ export default function DocumentPage() {
               목차 {d.sections.length}개 중 {included.length}개 항목, 약 {includedChars.toLocaleString()}자를 요약합니다.
               아래 목차에서 법적 고지·색인처럼 필요 없는 항목은 빼 주세요.
             </p>
+            {u && (
+              <p className={blocked ? "error" : "muted"}>
+                AI 사용량: 이번 요약 약 <strong>{estimate.toLocaleString()}쪽</strong>
+                {u.unlimited
+                  ? " (관리자: 회사 한도 없음)"
+                  : ` · 회사 이번 달 남은 양 ${u.remaining_pages.toLocaleString()}쪽 / 월 ${u.quota_pages.toLocaleString()}쪽`}
+                {u.budget_exceeded && " · 이번 달 전체 AI 예산을 모두 사용했습니다."}
+                {overQuota && " · 남은 양보다 많습니다. 요약할 목차를 줄이거나 관리자에게 한도를 요청하세요."}
+              </p>
+            )}
             <div className="form-row">
               <label>
                 가이드 언어
@@ -77,7 +94,7 @@ export default function DocumentPage() {
                   {LANGUAGES.map((l) => <option key={l.code} value={l.code}>{l.label}</option>)}
                 </select>
               </label>
-              <button className="primary" disabled={startGuide.isPending || included.length === 0} onClick={() => startGuide.mutate()}>
+              <button className="primary" disabled={startGuide.isPending || included.length === 0 || blocked} onClick={() => startGuide.mutate()}>
                 요약 시작
               </button>
             </div>

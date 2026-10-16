@@ -28,8 +28,7 @@ checks = {
     "glossary_on_stdin": "Glossary:" in prompt,
 }
 print(json.dumps({"type": "result", "subtype": "success", "is_error": False, "result": "",
-                  "structured_output": {"summary_markdown": json.dumps(checks),
-                                        "key_steps": ["설치 프로그램 실행"], "warnings": []}},
+                  "structured_output": {"summary_markdown": json.dumps(checks) + "\n\n1. 설치 프로그램 실행\n> ⚠ 재부팅됨"}},
                  ensure_ascii=False))
 '''
 
@@ -56,9 +55,10 @@ def provider(tmp_path, monkeypatch):
 def test_runs_cli_with_subscription_env(provider, monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-should-not-be-used")
     result = asyncio.run(provider.summarize_section(SAMPLE))
-    checks = json.loads(result.summary_markdown)
+    checks = json.loads(result.summary_markdown.splitlines()[0])
     assert all(checks.values()), checks
-    assert result.key_steps == ["설치 프로그램 실행"]  # 한글이 깨지지 않는다
+    # 절차·주의사항은 본문에서 뽑는다 (한글이 깨지지 않는다)
+    assert result.key_steps == ["설치 프로그램 실행"] and result.warnings == ["재부팅됨"]
 
 
 def test_cli_error_is_reported(provider, monkeypatch):

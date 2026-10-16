@@ -385,3 +385,37 @@ export interface CorrectionExport {
   error: string | null;
   created_at: string;
 }
+
+export interface Usage {
+  unlimited: boolean;
+  quota_pages: number;
+  used_pages: number;
+  remaining_pages: number;
+  regenerations_today: number;
+  regeneration_limit: number;
+  budget_exceeded: boolean;
+  estimate_pages?: number;
+}
+
+export interface PartnerUsage {
+  id: number;
+  name: string;
+  quota_pages: number;
+  custom_quota: boolean;
+  used_pages: number;
+  input_tokens: number;
+  output_tokens: number;
+  cost_usd: number;
+}
+
+export interface UsageOverview {
+  month: string;
+  budget_usd: number;
+  cost_usd: number;
+  default_quota_pages: number;
+  daily_regenerate_limit: number;
+  chars_per_page: number;
+  llm_provider: string;
+  partners: PartnerUsage[];
+  unassigned: { used_pages: number; cost_usd: number };
+}

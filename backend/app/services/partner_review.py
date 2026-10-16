@@ -24,11 +24,12 @@ from ..models import (
 )
 from .exporters.corrections import ReportRow, TrackedChange, build_report_docx, build_tracked_docx
 from .llm import CompareInput, LLMProvider, TocEntry, get_provider
-from .llm.base import FINDING_CATEGORIES, SEVERITIES
+from .llm.base import FINDING_CATEGORIES, SEVERITIES, LLMError
 from .parsing import parse_source
 from .jobs import JobPaused, has_time_for_llm_call
 from .pipeline import _local
 from .storage import get_storage
+from .usage import budget_exceeded
 
 _SPACES = re.compile(r"\s+")
 
@@ -93,6 +94,8 @@ def handle_compare_partner_guide(db: Session, job: Job) -> None:
         job.payload = {**job.payload, "started": True, "done": [], "errors": []}
         db.commit()
 
+    if budget_exceeded(db):
+        raise LLMError("이번 달 AI 사용 예산을 모두 사용해 비교를 중단했습니다.")
     # 시간 제한(서버리스)으로 멈췄다가 이어서 할 때는 아직 비교하지 않은 항목만 처리한다.
     done = set(job.payload["done"])
     asyncio.run(_compare_many(db, get_provider(), pg, [s for s in targets if s.id not in done], job))

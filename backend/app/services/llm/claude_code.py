@@ -28,6 +28,7 @@ from .prompts import (
     overview_prompt,
     parse_matches,
     section_prompt,
+    section_result,
 )
 
 # 지시문 파일 이름 → 내용 (CLI 에 --system-prompt-file 로 넘긴다)
@@ -89,11 +90,7 @@ class ClaudeCodeProvider:
 
     async def summarize_section(self, item: SectionInput) -> SectionResult:
         data = await self._run(section_prompt(item), SECTION_SCHEMA, item.glossary)
-        return SectionResult(
-            summary_markdown=data["summary_markdown"],
-            key_steps=list(data.get("key_steps", [])),
-            warnings=list(data.get("warnings", [])),
-        )
+        return section_result(data["summary_markdown"])
 
     async def summarize_overview(self, item: OverviewInput) -> str:
         data = await self._run(overview_prompt(item), OVERVIEW_SCHEMA, [])

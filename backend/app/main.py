@@ -22,6 +22,7 @@ from .routers import (
     partners,
     sharing,
     uploads,
+    usage,
     vendors,
 )
 from .security import hash_password
@@ -99,7 +100,7 @@ app.add_middleware(
 )
 
 for module in (
-    auth, admin, vendors, partners, documents, guides, exports, partner_guides, community, dashboard, sharing, uploads, jobs,
+    auth, admin, vendors, partners, documents, guides, exports, partner_guides, community, dashboard, sharing, uploads, jobs, usage,
 ):
     app.include_router(module.router)
 

@@ -9,10 +9,11 @@ from .base import (
     CompareInput,
     FindingResult,
     LLMError,
+    LLMUsage,
     OverviewInput,
     SectionInput,
-    SectionResult,
     TocEntry,
+    record_usage,
 )
 from .prompts import (
     COMPARE_SCHEMA,
@@ -27,6 +28,7 @@ from .prompts import (
     overview_prompt,
     parse_matches,
     section_prompt,
+    section_result,
 )
 
 
@@ -36,15 +38,15 @@ class ClaudeProvider:
         self._client = AsyncAnthropic(api_key=settings.anthropic_api_key) if settings.anthropic_api_key else AsyncAnthropic()
 
     async def summarize_section(self, item: SectionInput) -> SectionResult:
-        data = await self._json_call(section_prompt(item), SECTION_SCHEMA, item.glossary, max_tokens=32000)
-        return SectionResult(
-            summary_markdown=data["summary_markdown"],
-            key_steps=data["key_steps"],
-            warnings=data["warnings"],
+        data = await self._json_call(
+            section_prompt(item), SECTION_SCHEMA, item.glossary, max_tokens=16000, effort=settings.claude_summary_effort
         )
+        return section_result(data["summary_markdown"])
 
     async def summarize_overview(self, item: OverviewInput) -> str:
-        data = await self._json_call(overview_prompt(item), OVERVIEW_SCHEMA, [], max_tokens=16000)
+        data = await self._json_call(
+            overview_prompt(item), OVERVIEW_SCHEMA, [], max_tokens=8000, effort=settings.claude_summary_effort
+        )
         return data["overview_markdown"]
 
     async def match_sections(self, partner: list[TocEntry], vendor: list[TocEntry]) -> dict[int, int | None]:
@@ -67,6 +69,7 @@ class ClaudeProvider:
         *,
         max_tokens: int,
         system_prompt: str = SYSTEM_PROMPT,
+        effort: str | None = None,
     ) -> dict:
         system: list[dict] = [{"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}]
         if terms := glossary_text(glossary):
@@ -80,12 +83,23 @@ class ClaudeProvider:
             fallbacks="default",
             system=system,
             output_config={
-                "effort": settings.claude_effort,
+                "effort": effort or settings.claude_effort,
                 "format": {"type": "json_schema", "schema": schema},
             },
             messages=[{"role": "user", "content": user_content}],
         ) as stream:
             message = await stream.get_final_message()
+
+        u = message.usage
+        record_usage(
+            LLMUsage(
+                model=message.model or settings.claude_model,
+                input_tokens=u.input_tokens or 0,
+                output_tokens=u.output_tokens or 0,
+                cache_read_tokens=getattr(u, "cache_read_input_tokens", 0) or 0,
+                cache_write_tokens=getattr(u, "cache_creation_input_tokens", 0) or 0,
+            )
+        )
 
         if message.stop_reason == "refusal":
             raise LLMError("모델이 이 섹션의 요약을 거절했습니다.")

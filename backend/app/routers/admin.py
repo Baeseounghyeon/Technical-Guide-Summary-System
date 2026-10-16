@@ -3,12 +3,14 @@
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import or_, select
+from pydantic import BaseModel, Field
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
+from ..config import settings
 from ..db import get_db
 from ..deps import as_utc, require_platform_admin
-from ..models import AccessGrant, GrantStatus, Partner, Role, User, UserStatus, Vendor, utcnow
+from ..models import AccessGrant, GrantStatus, Partner, Role, UsageRecord, User, UserStatus, Vendor, utcnow
 from ..schemas import (
     AdminUserOut,
     ApproveIn,
@@ -20,6 +22,7 @@ from ..schemas import (
     VendorIn,
     VendorOut,
 )
+from ..services.usage import month_start, partner_quota
 
 router = APIRouter(prefix="/api/admin", tags=["관리자"], dependencies=[Depends(require_platform_admin)])
 
@@ -141,3 +144,65 @@ def _get_or_404(db: Session, model, obj_id: int):
     if obj is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "대상을 찾을 수 없습니다.")
     return obj
+
+
+# ---------- AI 사용량 ----------
+
+
+class QuotaIn(BaseModel):
+    monthly_page_quota: int | None = Field(None, ge=0)  # 비우면 기본값
+
+
+@router.get("/usage")
+def usage_overview(db: Session = Depends(get_db)) -> dict:
+    """이번 달 전체 비용·예산과 회사별 사용량."""
+    since = month_start()
+    rows = db.execute(
+        select(
+            UsageRecord.partner_id,
+            func.sum(UsageRecord.pages),
+            func.sum(UsageRecord.input_tokens),
+            func.sum(UsageRecord.output_tokens),
+            func.sum(UsageRecord.cost_usd),
+        )
+        .where(UsageRecord.created_at >= since)
+        .group_by(UsageRecord.partner_id)
+    ).all()
+    by_partner = {pid: (int(p or 0), int(i or 0), int(o or 0), float(c or 0)) for pid, p, i, o, c in rows}
+    partners = []
+    for partner in db.scalars(select(Partner).order_by(Partner.name)):
+        pages, tin, tout, cost = by_partner.get(partner.id, (0, 0, 0, 0.0))
+        partners.append(
+            {
+                "id": partner.id,
+                "name": partner.name,
+                "quota_pages": partner_quota(partner),
+                "custom_quota": partner.monthly_page_quota is not None,
+                "used_pages": pages,
+                "input_tokens": tin,
+                "output_tokens": tout,
+                "cost_usd": round(cost, 4),
+            }
+        )
+    other = by_partner.get(None, (0, 0, 0, 0.0))
+    return {
+        "month": since.strftime("%Y-%m"),
+        "budget_usd": settings.monthly_budget_usd,
+        "cost_usd": round(sum(v[3] for v in by_partner.values()), 4),
+        "default_quota_pages": settings.default_monthly_page_quota,
+        "daily_regenerate_limit": settings.daily_regenerate_limit,
+        "chars_per_page": settings.chars_per_page,
+        "llm_provider": settings.llm_provider,
+        "partners": partners,
+        "unassigned": {"used_pages": other[0], "cost_usd": round(other[3], 4)},  # 플랫폼 관리자 등 소속 없음
+    }
+
+
+@router.put("/partners/{partner_id}/quota")
+def set_partner_quota(partner_id: int, body: QuotaIn, db: Session = Depends(get_db)) -> dict:
+    partner = db.get(Partner, partner_id)
+    if partner is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "파트너사를 찾을 수 없습니다.")
+    partner.monthly_page_quota = body.monthly_page_quota
+    db.commit()
+    return {"id": partner.id, "quota_pages": partner_quota(partner), "custom_quota": partner.monthly_page_quota is not None}

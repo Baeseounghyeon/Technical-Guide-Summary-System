@@ -133,7 +133,9 @@ def test_full_flow(client, tmp_path):
 
     word = Document(str(Path(_export_path(exports[0]["id"]))))
     text = "\n".join(p.text for p in word.paragraphs)
-    assert "직접 수정한 요약" in text and "주의 사항" in text
+    assert "직접 수정한 요약" in text
+    # 주의사항은 요약 본문에 한 번만 나온다 (별도 '주의 사항' 목록으로 중복하지 않음)
+    assert text.count("the device reboots after installation.") == 1 and "주의 사항" not in text
     assert word.tables[0].rows[1].cells[4].text == "홍길동"
     assert len(word.tables[0].rows) == 2  # Word·PPT 를 같은 버전으로 만들어도 이력은 한 줄
     assert "언어: 한국어" in text

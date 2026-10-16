@@ -3,6 +3,7 @@ import re
 from difflib import SequenceMatcher
 
 from .base import CompareInput, FindingResult, OverviewInput, SectionInput, SectionResult, TocEntry
+from .prompts import section_result
 
 _STEP = re.compile(r"^\s*(?:\d+[.)]|step\s*\d+)\s*(.+)", re.IGNORECASE)
 _WARNING = re.compile(r"warning|caution|important|주의|경고", re.IGNORECASE)
@@ -22,11 +23,17 @@ class MockProvider:
         lines = [ln.strip() for ln in item.text.splitlines() if ln.strip()]
         steps = [m.group(1) for ln in lines if (m := _STEP.match(ln))][:8]
         warnings = [ln for ln in lines if _WARNING.search(ln)][:5]
-        body = "\n".join(f"- {ln}" for ln in lines[:5]) or "- (본문 없음)"
-        header = f"> [모의 요약 · {item.target_language}] {item.section_path}"
+        others = [ln for ln in lines if not _STEP.match(ln) and not _WARNING.search(ln)][:5]
+        # 실제 엔진과 같은 형식: 본문 + 번호 절차 + '> ⚠' 주의 줄 (목록은 본문에서 뽑는다)
+        parts = [f"> [모의 요약 · {item.target_language}] {item.section_path}"]
         if item.feedback:
-            header += f"\n> 반영한 피드백: {item.feedback}"
-        return SectionResult(summary_markdown=f"{header}\n\n{body}", key_steps=steps, warnings=warnings)
+            parts.append(f"> 반영한 피드백: {item.feedback}")
+        parts.append("\n".join(f"- {ln}" for ln in others) or "- (본문 없음)")
+        if steps:
+            parts.append("\n".join(f"{i}. {s}" for i, s in enumerate(steps, 1)))
+        if warnings:
+            parts.append("\n".join(f"> ⚠ {w}" for w in warnings))
+        return section_result("\n\n".join(parts))
 
     async def summarize_overview(self, item: OverviewInput) -> str:
         titles = "\n".join(f"- {title}" for title, _ in item.sections[:15])

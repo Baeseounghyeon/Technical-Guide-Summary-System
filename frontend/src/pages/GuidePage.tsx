@@ -181,6 +181,8 @@ function SummaryCard({ guideId, item }: { guideId: number; item: GuideItem }) {
   });
 
   const busy = BUSY.has(summary.status);
+  const extraSteps = summary.key_steps.filter((s) => !summary.content.includes(s));
+  const extraWarnings = summary.warnings.filter((w) => !summary.content.includes(w));
   const error = approve.error ?? save.error ?? regenerate.error;
   const pages = item.page_start ? `원본 p.${item.page_start}${item.page_end && item.page_end !== item.page_start ? `–${item.page_end}` : ""}` : "";
 
@@ -212,16 +214,17 @@ function SummaryCard({ guideId, item }: { guideId: number; item: GuideItem }) {
       ) : (
         <>
           {summary.content && <div className="summary-body">{summary.content}</div>}
-          {summary.key_steps.length > 0 && (
+          {/* 절차·주의사항은 요약 본문에서 뽑은 것이므로, 본문에 없는 것(직접 수정 등으로 빠진 것)만 따로 보여 준다 */}
+          {extraSteps.length > 0 && (
             <>
               <p className="muted" style={{ marginBottom: 0 }}>핵심 절차</p>
-              <ol className="steps">{summary.key_steps.map((s, i) => <li key={i}>{s}</li>)}</ol>
+              <ol className="steps">{extraSteps.map((s, i) => <li key={i}>{s}</li>)}</ol>
             </>
           )}
-          {summary.warnings.length > 0 && (
+          {extraWarnings.length > 0 && (
             <div className="warnings">
               <strong>주의 사항</strong>
-              <ul>{summary.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>
+              <ul>{extraWarnings.map((w, i) => <li key={i}>{w}</li>)}</ul>
             </div>
           )}
         </>

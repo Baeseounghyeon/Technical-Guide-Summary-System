@@ -6,6 +6,7 @@ from sqlalchemy import (
     Boolean,
     Column,
     DateTime,
+    Float,
     ForeignKey,
     Integer,
     String,
@@ -123,6 +124,8 @@ class Partner(Base):
     logo_path: Mapped[str | None] = mapped_column(String(500))
     docx_template_path: Mapped[str | None] = mapped_column(String(500))
     pptx_template_path: Mapped[str | None] = mapped_column(String(500))
+    # 이 회사가 한 달에 쓸 수 있는 AI 처리량(쪽 환산). 비우면 기본값(DEFAULT_MONTHLY_PAGE_QUOTA)
+    monthly_page_quota: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     vendors: Mapped[list[Vendor]] = relationship(secondary=partner_vendors)
@@ -568,3 +571,21 @@ class Job(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class UsageRecord(Base):
+    """AI(요약 엔진) 사용 기록. 요청할 때 쪽 환산량을 차감하고, 처리 후 실제 토큰·비용을 채운다."""
+
+    __tablename__ = "usage_records"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    partner_id: Mapped[int | None] = mapped_column(ForeignKey("partners.id", ondelete="SET NULL"), index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), index=True)
+    kind: Mapped[str] = mapped_column(String(20))  # summarize | regenerate | match | compare
+    pages: Mapped[int] = mapped_column(Integer, default=0)
+    guide_id: Mapped[int | None] = mapped_column(Integer)
+    partner_guide_id: Mapped[int | None] = mapped_column(Integer)
+    input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)

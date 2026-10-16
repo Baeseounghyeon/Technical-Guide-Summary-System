@@ -65,10 +65,12 @@ def build_docx(ctx: ExportContext, out_path: Path) -> None:
         _heading(doc, section.title, min(section.level, 4))
         if section.content:
             _add_markdown(doc, section.content)
-        if section.warnings:
+        # 요약 본문에 이미 있는 주의사항은 다시 쓰지 않는다 (직접 수정 등으로 본문에서 빠진 것만)
+        extra = [w for w in section.warnings if w not in (section.content or "")]
+        if extra:
             p = doc.add_paragraph()
             p.add_run("주의 사항").bold = True
-            for w in section.warnings:
+            for w in extra:
                 _add_inline(_para(doc, "", "List Bullet"), w)
         label = page_label(section)
         if label:

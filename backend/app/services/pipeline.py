@@ -33,6 +33,7 @@ from .exporters import ExportContext, ExportSection, build_docx, build_pptx
 from .llm import LLMProvider, OverviewInput, SectionInput, SectionResult, get_provider
 from .parsing import is_boilerplate, parse_source
 from .storage import get_storage
+from .usage import budget_exceeded
 
 # ---------- 1. 문서 파싱 ----------
 
@@ -96,6 +97,13 @@ def handle_summarize_guide(db: Session, job: Job) -> None:
         s.status = SummaryStatus.PENDING
     if not resumed:
         job.progress_total = len(targets)
+    if budget_exceeded(db):
+        # 전체 월 예산을 넘으면 남은 항목은 멈춘다 (예산이 늘거나 다음 달에 '코멘트로 재생성'으로 다시 만들 수 있다)
+        for s in targets:
+            s.status, s.error = SummaryStatus.FAILED, "이번 달 AI 사용 예산을 모두 사용해 중단했습니다."
+        guide.status = GuideStatus.REVIEWING
+        db.commit()
+        return
     db.commit()
 
     provider = get_provider()
