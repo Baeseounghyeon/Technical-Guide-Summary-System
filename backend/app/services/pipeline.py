@@ -2,6 +2,8 @@
 
 import asyncio
 import re
+import tempfile
+from contextlib import ExitStack
 from datetime import datetime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -26,9 +28,11 @@ from ..models import (
     SummaryRevision,
     SummaryStatus,
 )
+from .jobs import JobPaused, has_time_for_llm_call
 from .exporters import ExportContext, ExportSection, build_docx, build_pptx
 from .llm import LLMProvider, OverviewInput, SectionInput, SectionResult, get_provider
 from .parsing import is_boilerplate, parse_source
+from .storage import get_storage
 
 # ---------- 1. 문서 파싱 ----------
 
@@ -38,9 +42,9 @@ def handle_parse_document(db: Session, job: Job) -> None:
     doc.status = DocStatus.PARSING
     db.commit()
 
-    parsed = parse_source(
-        doc.source_type, path=Path(doc.file_path) if doc.file_path else None, url=doc.url
-    )
+    with ExitStack() as stack:
+        path = stack.enter_context(get_storage().local_path(doc.file_path)) if doc.file_path else None
+        parsed = parse_source(doc.source_type, path=path, url=doc.url)
     doc.sections.clear()
     db.flush()
 
@@ -80,12 +84,24 @@ def fail_parse_document(db: Session, job: Job, error: str) -> None:
 def handle_summarize_guide(db: Session, job: Job) -> None:
     guide = db.get(Guide, job.payload["guide_id"])
     guide.status = GuideStatus.SUMMARIZING
-    targets = [s for s in guide.summaries if s.status in (SummaryStatus.PENDING, SummaryStatus.FAILED)]
-    job.progress_total = len(targets)
+    resumed = bool(job.payload.get("started"))
+    if resumed:
+        # 시간 제한으로 멈췄다가 이어서 하는 경우: 끝나지 않은 것만 (실패한 것은 다시 시도하지 않는다)
+        retry = (SummaryStatus.PENDING, SummaryStatus.GENERATING)
+    else:
+        retry = (SummaryStatus.PENDING, SummaryStatus.FAILED)
+        job.payload = {**job.payload, "started": True}
+    targets = [s for s in guide.summaries if s.status in retry]
+    for s in targets:
+        s.status = SummaryStatus.PENDING
+    if not resumed:
+        job.progress_total = len(targets)
     db.commit()
 
     provider = get_provider()
     asyncio.run(_summarize_many(db, provider, guide, targets, job))
+    if any(s.status == SummaryStatus.PENDING for s in targets) or not has_time_for_llm_call():
+        raise JobPaused
 
     drafted = [s for s in _ordered_summaries(guide) if s.content]
     if drafted:
@@ -112,6 +128,8 @@ async def _summarize_many(
 
     async def run(summary: SectionSummary) -> None:
         async with semaphore:
+            if not has_time_for_llm_call():
+                return  # 시간 제한: PENDING 으로 남겨 다음 처리 때 이어서 한다
             summary.status = SummaryStatus.GENERATING
             db.commit()
             try:
@@ -140,6 +158,8 @@ def fail_summarize_guide(db: Session, job: Job, error: str) -> None:
 
 
 def handle_regenerate_section(db: Session, job: Job) -> None:
+    if not has_time_for_llm_call():
+        raise JobPaused
     summary = db.get(SectionSummary, job.payload["summary_id"])
     guide = summary.guide
     item = _section_input(guide, summary.section, _glossary(db, guide))
@@ -164,14 +184,14 @@ def fail_regenerate_section(db: Session, job: Job, error: str) -> None:
 
 def handle_export_guide(db: Session, job: Job) -> None:
     export = db.get(Export, job.payload["export_id"])
-    ctx = _export_context(db, export)
-    out_dir = settings.storage_dir / "exports"
-    out_dir.mkdir(parents=True, exist_ok=True)
     safe_version = re.sub(r"[^\w.-]", "_", export.doc_version)
-    out_path = out_dir / f"guide{export.guide_id}_v{safe_version}_{export.id}.{export.format}"
-
-    (build_docx if export.format == "docx" else build_pptx)(ctx, out_path)
-    export.file_path = str(out_path)
+    name = f"guide{export.guide_id}_v{safe_version}_{export.id}.{export.format}"
+    storage = get_storage()
+    with ExitStack() as stack:
+        ctx = _export_context(db, export, stack)
+        out_path = Path(stack.enter_context(tempfile.TemporaryDirectory())) / name
+        (build_docx if export.format == "docx" else build_pptx)(ctx, out_path)
+        export.file_path = storage.save(f"exports/{name}", out_path.read_bytes())
     export.status = ExportStatus.DONE
     db.commit()
 
@@ -182,7 +202,8 @@ def fail_export_guide(db: Session, job: Job, error: str) -> None:
     export.error = error
 
 
-def _export_context(db: Session, export: Export) -> ExportContext:
+def _export_context(db: Session, export: Export, stack: ExitStack) -> ExportContext:
+    """로고·양식은 저장소에서 로컬 경로로 받아 stack 이 닫힐 때까지 유지한다."""
     guide = export.guide
     doc = guide.document
     partner_id = export.partner_id or doc.partner_id
@@ -229,13 +250,17 @@ def _export_context(db: Session, export: Export) -> ExportContext:
         created_at=_local(export.created_at),
         overview=guide.overview,
         sections=sections,
-        logo_path=Path(partner.logo_path) if export.include_logo and partner and partner.logo_path else None,
-        template_path=Path(template) if template else None,
+        logo_path=_local_file(stack, partner.logo_path) if export.include_logo and partner and partner.logo_path else None,
+        template_path=_local_file(stack, template) if template else None,
         revisions=revisions,
     )
 
 
 # ---------- 공통 ----------
+
+
+def _local_file(stack: ExitStack, ref: str) -> Path:
+    return stack.enter_context(get_storage().local_path(ref))
 
 
 def _local(value: datetime) -> datetime:

@@ -1,19 +1,18 @@
 """파트너사 로고·템플릿 관리 (플랫폼 관리자 또는 해당 파트너사 관리자)."""
 
-import shutil
-import uuid
 from pathlib import Path
 from typing import Literal
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
-from ..config import settings
 from ..db import get_db
 from ..deps import get_active_user, is_admin
 from ..models import Partner, Role, User
 from ..schemas import PartnerOut
+from ..services.storage import get_storage
+from .uploads import store_upload
 
 router = APIRouter(prefix="/api/partners", tags=["파트너사"])
 
@@ -32,30 +31,29 @@ def get_partner(partner_id: int, user: User = Depends(get_active_user), db: Sess
 
 
 @router.get("/{partner_id}/logo")
-def get_logo(partner_id: int, user: User = Depends(get_active_user), db: Session = Depends(get_db)) -> FileResponse:
+def get_logo(partner_id: int, user: User = Depends(get_active_user), db: Session = Depends(get_db)) -> Response:
     """설정 화면 미리보기용. 해당 파트너사 소속이면 누구나 볼 수 있다."""
     partner = _partner_for(db, user, partner_id, manage=False)
     path = Path(partner.logo_path) if partner.logo_path else None
-    if path is None or not path.is_file():
+    if path is None or not get_storage().exists(partner.logo_path):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "등록된 로고가 없습니다.")
-    return FileResponse(path, media_type=LOGO_MEDIA_TYPES.get(path.suffix.lower(), "application/octet-stream"))
+    return get_storage().inline_response(partner.logo_path, LOGO_MEDIA_TYPES.get(path.suffix.lower(), "application/octet-stream"))
 
 
 @router.post("/{partner_id}/assets/{kind}", response_model=PartnerOut)
 def upload_asset(
-    partner_id: int, kind: AssetKind, file: UploadFile = File(...),
+    partner_id: int, kind: AssetKind, file: UploadFile | None = File(None),
+    storage_key: str | None = Form(None), filename: str | None = Form(None),
     user: User = Depends(get_active_user), db: Session = Depends(get_db),
 ) -> Partner:
     partner = _partner_for(db, user, partner_id, manage=True)
-    ext = Path(file.filename or "").suffix.lower()
+    if file is None and not storage_key:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "파일을 선택하세요.")
+    ext = Path(file.filename or "" if file is not None else storage_key).suffix.lower()
     if ext not in ALLOWED[kind]:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"허용 형식: {', '.join(sorted(ALLOWED[kind]))}")
-    out_dir = settings.storage_dir / "partners" / str(partner.id)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / f"{kind}_{uuid.uuid4().hex}{ext}"
-    with out_path.open("wb") as f:
-        shutil.copyfileobj(file.file, f)
-    setattr(partner, f"{kind}_path", str(out_path))
+    ref, _ = store_upload(f"partners/{partner.id}", file, storage_key, filename)
+    setattr(partner, f"{kind}_path", ref)
     db.commit()
     return partner
 

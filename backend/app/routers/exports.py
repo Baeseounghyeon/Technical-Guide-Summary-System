@@ -1,5 +1,4 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from ..db import get_db
@@ -7,6 +6,7 @@ from ..deps import get_active_user, get_guide_for_user, is_admin
 from ..models import Export, ExportStatus, Guide, GuideStatus, JobKind, Partner, User
 from ..schemas import ExportCreate, ExportOut
 from ..services.jobs import enqueue
+from ..services.storage import get_storage
 
 router = APIRouter(prefix="/api", tags=["최종 문서"])
 
@@ -78,8 +78,8 @@ def download_export(export_id: int, user: User = Depends(get_active_user), db: S
     if export.status != ExportStatus.DONE or not export.file_path:
         raise HTTPException(status.HTTP_409_CONFLICT, "아직 생성되지 않은 문서입니다.")
     title = guide.document.title or "guide"
-    return FileResponse(
+    return get_storage().response(
         export.file_path,
-        media_type=MEDIA_TYPES[export.format],
-        filename=f"{title}_{guide.target_language}_v{export.doc_version}.{export.format}",
+        f"{title}_{guide.target_language}_v{export.doc_version}.{export.format}",
+        MEDIA_TYPES[export.format],
     )

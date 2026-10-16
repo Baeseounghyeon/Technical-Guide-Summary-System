@@ -17,12 +17,15 @@ from .routers import (
     documents,
     exports,
     guides,
+    jobs,
     partner_guides,
     partners,
     sharing,
+    uploads,
     vendors,
 )
 from .security import hash_password
+from .services.jobs import enqueued_in_request
 
 
 def bootstrap_admin() -> None:
@@ -58,7 +61,35 @@ async def lifespan(_app: FastAPI):
     yield
 
 
+class MarkQueuedJobs:
+    """요청 처리 중 작업이 등록되면 응답에 X-Jobs-Queued 헤더를 붙인다.
+
+    서버리스에서는 상주 Worker 가 없으므로, 화면이 이 헤더를 보고 /api/jobs/kick 을 불러 처리를 시작한다.
+    """
+
+    def __init__(self, app) -> None:
+        self.app = app
+
+    async def __call__(self, scope, receive, send) -> None:
+        if scope["type"] != "http" or not settings.job_time_budget_seconds:
+            await self.app(scope, receive, send)
+            return
+        flag: list = []
+        token = enqueued_in_request.set(flag)
+
+        async def send_with_header(message) -> None:
+            if message["type"] == "http.response.start" and flag:
+                message["headers"] = [*message.get("headers", []), (b"x-jobs-queued", b"1")]
+            await send(message)
+
+        try:
+            await self.app(scope, receive, send_with_header)
+        finally:
+            enqueued_in_request.reset(token)
+
+
 app = FastAPI(title="기술 가이드 요약 시스템", version="0.1.0", lifespan=lifespan)
+app.add_middleware(MarkQueuedJobs)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
@@ -67,7 +98,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-for module in (auth, admin, vendors, partners, documents, guides, exports, partner_guides, community, dashboard, sharing):
+for module in (
+    auth, admin, vendors, partners, documents, guides, exports, partner_guides, community, dashboard, sharing, uploads, jobs,
+):
     app.include_router(module.router)
 
 

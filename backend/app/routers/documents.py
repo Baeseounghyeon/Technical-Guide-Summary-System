@@ -1,18 +1,16 @@
-import shutil
-import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..config import settings
 from ..db import get_db
 from ..deps import accessible_vendors, ensure_vendor_access, get_active_user, get_document_for_user, is_admin
 from ..models import JobKind, Section, SourceDocument, User
 from ..schemas import DocumentDetail, DocumentOut, GuideBrief, SectionOut, SectionPatch
 from ..services.jobs import enqueue
 from ..services.parsing import SUPPORTED_EXTENSIONS
+from .uploads import store_upload
 
 router = APIRouter(prefix="/api", tags=["원본 문서"])
 
@@ -23,29 +21,28 @@ def create_document(
     title: str | None = Form(None),
     url: str | None = Form(None),
     file: UploadFile | None = File(None),
+    storage_key: str | None = Form(None),
+    filename: str | None = Form(None),
     user: User = Depends(get_active_user),
     db: Session = Depends(get_db),
 ) -> DocumentOut:
     """파일(PDF/Word/PPT) 또는 웹 문서 URL을 등록하고 파싱 작업을 예약한다."""
     ensure_vendor_access(db, user, vendor_id)
-    if (file is None) == (not url):
+    has_file = file is not None or bool(storage_key)
+    if has_file == bool(url):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "파일 또는 URL 중 하나만 입력하세요.")
 
     doc = SourceDocument(vendor_id=vendor_id, partner_id=user.partner_id, uploaded_by=user.id, title=title or None)
-    if file is not None:
-        ext = Path(file.filename or "").suffix.lower()
+    if has_file:
+        ext = Path(file.filename or "" if file is not None else storage_key).suffix.lower()
         if ext not in SUPPORTED_EXTENSIONS:
             raise HTTPException(
                 status.HTTP_400_BAD_REQUEST, "PDF, Word(.docx), PowerPoint(.pptx) 파일만 지원합니다."
             )
-        upload_dir = settings.storage_dir / "uploads"
-        upload_dir.mkdir(parents=True, exist_ok=True)
-        path = upload_dir / f"{uuid.uuid4().hex}{ext}"
-        with path.open("wb") as f:
-            shutil.copyfileobj(file.file, f)
+        ref, original_name = store_upload("uploads", file, storage_key, filename)
         doc.source_type = SUPPORTED_EXTENSIONS[ext]
-        doc.file_path = str(path)
-        fallback_title = Path(file.filename or "").stem
+        doc.file_path = ref
+        fallback_title = Path(original_name).stem
     else:
         doc.source_type = "url"
         doc.url = url

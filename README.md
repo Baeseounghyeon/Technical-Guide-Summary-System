@@ -126,6 +126,45 @@ cd backend; .\.venv\Scripts\python -m app.migrate_to_postgres
 
 업로드·생성 파일은 DB가 아니라 `backend/storage` 폴더에 그대로 있습니다. SQLite로 돌아가려면 `.env`의 `DATABASE_URL` 줄을 지우면 됩니다(옮긴 뒤 바뀐 데이터는 SQLite에 없음).
 
+## Vercel 배포 (화면 + 서버)
+
+화면(React)은 정적 파일로, 서버(FastAPI)는 Python 함수(`api/index.py`)로 한 프로젝트에 올라갑니다. 설정은 `vercel.json`.
+Vercel 함수는 상주하지 않으므로 다음처럼 동작합니다.
+
+- **파일:** Supabase Storage 비공개 버킷(`techguide`)에 저장. 업로드는 브라우저가 저장소로 직접 올리고(요청 크기 4.5MB 제한 회피), 다운로드는 5분짜리 서명 주소로 받습니다.
+- **작업(파싱·요약·문서 생성):** 작업을 등록한 응답에 `X-Jobs-Queued` 헤더가 붙으면 화면이 `/api/jobs/kick`을 호출해 처리를 시작합니다.
+  한 번에 `JOB_TIME_BUDGET_SECONDS`(240초)만 처리하고, 남으면 `/api/jobs/run`을 다시 불러 이어 갑니다. 끊겨도 Supabase pg_cron이 1분마다 `/api/jobs/run`을 불러 이어서 처리합니다.
+- **지역:** 함수는 서울(`icn1`)에서 실행되어 Supabase(서울)와 가깝습니다.
+
+### Vercel 환경 변수 (Project Settings → Environment Variables)
+
+| 이름 | 값 |
+|---|---|
+| `DATABASE_URL` | Supabase **Transaction pooler**(포트 6543) 주소, `postgresql+psycopg://...` 형식 |
+| `JWT_SECRET` | 32자 이상 임의 문자열 (로컬 `.env`의 `VERCEL_JWT_SECRET` 값) |
+| `STORAGE_BACKEND` | `supabase` |
+| `SUPABASE_URL` | `https://프로젝트ID.supabase.co` |
+| `SUPABASE_SERVICE_KEY` | Supabase secret 키 (`sb_secret_...`) |
+| `LLM_PROVIDER` | `claude` |
+| `ANTHROPIC_API_KEY` | Claude API 키 |
+| `LLM_CONCURRENCY` | `4` |
+| `JOB_TIME_BUDGET_SECONDS` | `240` |
+| `CRON_SECRET` | 임의 문자열 (로컬 `.env`의 `CRON_SECRET`과 같은 값) |
+
+`ADMIN_EMAIL`/`ADMIN_PASSWORD`는 넣지 않습니다(관리자 계정이 이미 DB에 있음). 구독 엔진(`claude_code`)은 Vercel에서 실행되지 않습니다.
+
+### 배포 후 한 번: 1분 예약 작업 등록
+
+```bash
+cd backend; .\.venv\Scripts\python -m app.setup_cron https://배포주소.vercel.app
+```
+
+### 기존 PC 파일을 저장소로 옮기기 (한 번)
+
+```bash
+cd backend; .\.venv\Scripts\python -m app.migrate_files_to_storage
+```
+
 ## 운영 시 Worker 분리
 
 `.env`에서 `EMBEDDED_WORKER=false`로 바꾸고 Worker를 별도 프로세스로 실행합니다.

@@ -8,6 +8,7 @@ os.environ.update(
     {
         "DATABASE_URL": f"sqlite:///{(_tmp / 'test.db').as_posix()}",
         "STORAGE_DIR": str(_tmp / "storage"),
+        "STORAGE_BACKEND": "local",  # .env 가 supabase 여도 테스트는 임시 폴더 사용
         "LLM_PROVIDER": "mock",
         "EMBEDDED_WORKER": "false",  # 테스트는 run_pending_jobs() 로 직접 처리
         "ADMIN_EMAIL": "admin@example.com",

@@ -45,7 +45,8 @@ def get_db() -> Iterator[Session]:
 def init_db() -> None:
     from . import models  # noqa: F401  (테이블 등록)
 
-    settings.storage_dir.mkdir(parents=True, exist_ok=True)
+    if settings.storage_backend == "local":
+        settings.storage_dir.mkdir(parents=True, exist_ok=True)
     if _is_sqlite and engine.url.database:
         Path(engine.url.database).parent.mkdir(parents=True, exist_ok=True)
     Base.metadata.create_all(engine)
@@ -78,5 +79,8 @@ def _enable_row_level_security() -> None:
     이 서버는 테이블 소유자 계정으로 직접 접속하므로 RLS 의 영향을 받지 않는다.
     """
     with engine.begin() as conn:
+        # 서버리스는 시작할 때마다 이 함수를 부르므로, 아직 꺼진 테이블에만 적용한다 (불필요한 테이블 잠금 방지).
+        off = set(conn.scalars(text("SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND NOT rowsecurity")))
         for table in Base.metadata.sorted_tables:
-            conn.execute(text(f'ALTER TABLE "{table.name}" ENABLE ROW LEVEL SECURITY'))
+            if table.name in off:
+                conn.execute(text(f'ALTER TABLE "{table.name}" ENABLE ROW LEVEL SECURITY'))

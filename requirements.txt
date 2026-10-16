@@ -1,0 +1,2 @@
+# Vercel Python 함수(api/index.py)용. 실제 목록은 backend/requirements.txt 에서 관리한다.
+-r backend/requirements.txt

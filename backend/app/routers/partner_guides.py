@@ -1,15 +1,11 @@
 """2단계: 파트너 가이드 업로드 → 목차 매칭 확인 → 오류 탐지 → 수락/거절 → 수정본·보고서."""
 
-import shutil
-import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
-from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..config import settings
 from ..db import get_db
 from ..deps import get_active_user, get_guide_for_user
 from ..models import (
@@ -41,6 +37,8 @@ from ..schemas import (
 )
 from ..services.jobs import enqueue
 from ..services.parsing import SUPPORTED_EXTENSIONS
+from ..services.storage import get_storage
+from .uploads import store_upload
 
 router = APIRouter(prefix="/api", tags=["파트너 가이드 비교"])
 
@@ -50,7 +48,9 @@ DOCX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingm
 @router.post("/guides/{guide_id}/partner-guides", response_model=PartnerGuideOut, status_code=status.HTTP_201_CREATED)
 def upload_partner_guide(
     guide_id: int,
-    file: UploadFile = File(...),
+    file: UploadFile | None = File(None),
+    storage_key: str | None = Form(None),
+    filename: str | None = Form(None),
     title: str | None = Form(None),
     user: User = Depends(get_active_user),
     db: Session = Depends(get_db),
@@ -58,15 +58,12 @@ def upload_partner_guide(
     guide = get_guide_for_user(db, user, guide_id)
     if guide.status != GuideStatus.APPROVED:
         raise HTTPException(status.HTTP_409_CONFLICT, "모든 항목을 승인한 요약 가이드만 비교 기준으로 쓸 수 있습니다.")
-    ext = Path(file.filename or "").suffix.lower()
+    if file is None and not storage_key:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "파일을 선택하세요.")
+    ext = Path(file.filename or "" if file is not None else storage_key).suffix.lower()
     if ext not in SUPPORTED_EXTENSIONS:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "PDF, Word(.docx), PowerPoint(.pptx) 파일만 지원합니다.")
-
-    upload_dir = settings.storage_dir / "partner-guides"
-    upload_dir.mkdir(parents=True, exist_ok=True)
-    path = upload_dir / f"{uuid.uuid4().hex}{ext}"
-    with path.open("wb") as f:
-        shutil.copyfileobj(file.file, f)
+    ref, original_name = store_upload("partner-guides", file, storage_key, filename)
 
     pg = PartnerGuide(
         guide=guide,
@@ -74,11 +71,11 @@ def upload_partner_guide(
         uploaded_by=user.id,
         title=title or None,
         source_type=SUPPORTED_EXTENSIONS[ext],
-        file_path=str(path),
+        file_path=ref,
     )
     db.add(pg)
     db.flush()
-    enqueue(db, JobKind.PARSE_PARTNER_GUIDE, {"partner_guide_id": pg.id, "fallback_title": Path(file.filename or "").stem})
+    enqueue(db, JobKind.PARSE_PARTNER_GUIDE, {"partner_guide_id": pg.id, "fallback_title": Path(original_name).stem})
     db.commit()
     return pg
 
@@ -243,7 +240,7 @@ def download_correction_export(export_id: int, user: User = Depends(get_active_u
     if not export.file_path:
         raise HTTPException(status.HTTP_409_CONFLICT, "아직 생성되지 않은 파일입니다.")
     label = "수정본_변경추적" if export.kind == "tracked" else "수정보고서"
-    return FileResponse(export.file_path, media_type=DOCX_MEDIA_TYPE, filename=f"{pg.title or 'partner-guide'}_{label}.docx")
+    return get_storage().response(export.file_path, f"{pg.title or 'partner-guide'}_{label}.docx", DOCX_MEDIA_TYPE)
 
 
 def _partner_guide(db: Session, user: User, pg_id: int) -> PartnerGuide:

@@ -2,6 +2,7 @@
 
 import asyncio
 import re
+import tempfile
 from pathlib import Path
 
 from sqlalchemy import select
@@ -25,7 +26,9 @@ from .exporters.corrections import ReportRow, TrackedChange, build_report_docx, 
 from .llm import CompareInput, LLMProvider, TocEntry, get_provider
 from .llm.base import FINDING_CATEGORIES, SEVERITIES
 from .parsing import parse_source
+from .jobs import JobPaused, has_time_for_llm_call
 from .pipeline import _local
+from .storage import get_storage
 
 _SPACES = re.compile(r"\s+")
 
@@ -38,7 +41,8 @@ def handle_parse_partner_guide(db: Session, job: Job) -> None:
     pg.status = PartnerGuideStatus.PARSING
     db.commit()
 
-    parsed = parse_source(pg.source_type, path=Path(pg.file_path))
+    with get_storage().local_path(pg.file_path) as path:
+        parsed = parse_source(pg.source_type, path=path)
     pg.sections.clear()
     db.flush()
     for index, ps in enumerate(parsed.sections):
@@ -78,22 +82,30 @@ def fail_parse_partner_guide(db: Session, job: Job, error: str) -> None:
 
 def handle_compare_partner_guide(db: Session, job: Job) -> None:
     pg = db.get(PartnerGuide, job.payload["partner_guide_id"])
-    # 아직 결정하지 않은 후보만 지우고 다시 찾는다. 수락·거절한 기록은 이력으로 남긴다.
-    for finding in [f for f in pg.findings if f.status == FindingStatus.OPEN]:
-        pg.findings.remove(finding)
     targets = [s for s in pg.sections if s.matched_section_id and s.text.strip()]
-    pg.status = PartnerGuideStatus.COMPARING
-    pg.progress_current, pg.progress_total = 0, len(targets)
-    pg.error = None
-    db.commit()
+    if not job.payload.get("started"):
+        # 아직 결정하지 않은 후보만 지우고 다시 찾는다. 수락·거절한 기록은 이력으로 남긴다.
+        for finding in [f for f in pg.findings if f.status == FindingStatus.OPEN]:
+            pg.findings.remove(finding)
+        pg.status = PartnerGuideStatus.COMPARING
+        pg.progress_current, pg.progress_total = 0, len(targets)
+        pg.error = None
+        job.payload = {**job.payload, "started": True, "done": [], "errors": []}
+        db.commit()
 
-    errors = asyncio.run(_compare_many(db, get_provider(), pg, targets))
+    # 시간 제한(서버리스)으로 멈췄다가 이어서 할 때는 아직 비교하지 않은 항목만 처리한다.
+    done = set(job.payload["done"])
+    asyncio.run(_compare_many(db, get_provider(), pg, [s for s in targets if s.id not in done], job))
+    if len(job.payload["done"]) < len(targets):
+        raise JobPaused
     pg.status = PartnerGuideStatus.REVIEWING
-    pg.error = "\n".join(errors) or None
+    pg.error = "\n".join(job.payload["errors"]) or None
     db.commit()
 
 
-async def _compare_many(db: Session, provider: LLMProvider, pg: PartnerGuide, targets: list[PartnerSection]) -> list[str]:
+async def _compare_many(
+    db: Session, provider: LLMProvider, pg: PartnerGuide, targets: list[PartnerSection], job: Job
+) -> None:
     guide = pg.guide
     vendor_sections = guide.document.sections
     summaries = {s.section_id: s.content for s in guide.summaries}
@@ -111,10 +123,12 @@ async def _compare_many(db: Session, provider: LLMProvider, pg: PartnerGuide, ta
         for s in targets
     }
     semaphore = asyncio.Semaphore(settings.llm_concurrency)
-    errors: list[str] = []
 
     async def run(section: PartnerSection) -> None:
         async with semaphore:
+            if not has_time_for_llm_call():
+                return  # 시간 제한: 다음 처리 때 이어서 한다
+            errors: list[str] = []
             try:
                 results = await provider.compare_section(inputs[section.id])
             except Exception as e:  # 한 섹션 실패가 전체를 멈추지 않도록 기록만 한다.
@@ -138,10 +152,14 @@ async def _compare_many(db: Session, provider: LLMProvider, pg: PartnerGuide, ta
                         )
                     )
             pg.progress_current += 1
+            job.payload = {
+                **job.payload,
+                "done": job.payload["done"] + [section.id],
+                "errors": job.payload["errors"] + errors,
+            }
             db.commit()
 
     await asyncio.gather(*(run(s) for s in targets))
-    return errors
 
 
 def fail_compare_partner_guide(db: Session, job: Job, error: str) -> None:
@@ -156,15 +174,23 @@ def fail_compare_partner_guide(db: Session, job: Job, error: str) -> None:
 def handle_export_correction(db: Session, job: Job) -> None:
     export = db.get(CorrectionExport, job.payload["export_id"])
     pg = export.partner_guide
-    out_dir = settings.storage_dir / "corrections"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / f"partner{pg.id}_{export.kind}_{export.id}.docx"
+    name = f"partner{pg.id}_{export.kind}_{export.id}.docx"
+    with tempfile.TemporaryDirectory() as tmp:
+        out_path = Path(tmp) / name
+        _build_correction(db, export, pg, out_path)
+        export.file_path = get_storage().save(f"corrections/{name}", out_path.read_bytes())
+    export.status = ExportStatus.DONE
+    db.commit()
+
+
+def _build_correction(db: Session, export: CorrectionExport, pg: PartnerGuide, out_path: Path) -> None:
     names = _user_names(db, {f.decided_by for f in pg.findings} | {export.created_by})
 
     if export.kind == "tracked":
         accepted = [f for f in pg.findings if f.status == FindingStatus.ACCEPTED]
         changes = [TrackedChange(f.id, f.before_text, f.final_text or f.after_text) for f in accepted]
-        applied = build_tracked_docx(Path(pg.file_path), changes, names.get(export.created_by, "검토자"), export.created_at, out_path)
+        with get_storage().local_path(pg.file_path) as source:
+            applied = build_tracked_docx(source, changes, names.get(export.created_by, "검토자"), export.created_at, out_path)
         export.applied_count = len(applied)
         export.skipped_count = len(accepted) - len(applied)
     else:
@@ -191,9 +217,6 @@ def handle_export_correction(db: Session, job: Job) -> None:
             rows=rows,
             out_path=out_path,
         )
-    export.file_path = str(out_path)
-    export.status = ExportStatus.DONE
-    db.commit()
 
 
 def fail_export_correction(db: Session, job: Job, error: str) -> None:
