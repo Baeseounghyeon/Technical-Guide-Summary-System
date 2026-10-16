@@ -42,18 +42,13 @@ export function MyRequestsPage() {
 
 const GRANT_STATUS_LABELS: Record<string, string> = { pending: "승인 대기", approved: "승인", rejected: "반려", revoked: "회수" };
 
-/** 권한 승인: 내가 보낸 도메인 권한 요청의 처리 결과 (관리자는 승인 화면으로 바로 간다). */
-export function ApprovalsPage() {
-  const { me } = useAuth();
+/** 내가 보낸 도메인 권한 요청의 처리 결과 (도메인 권한 요청 화면 아래에 보여 준다). */
+function MyDomainRequests() {
   const grants = useQuery({ queryKey: ["access-requests", "mine"], queryFn: () => api<AccessGrant[]>("/community/access-requests/mine") });
-  if (me?.role === "platform_admin") return <Navigate to="/admin#access-requests" replace />;
   return (
     <>
-      <div className="page-header">
-        <h1>권한 승인</h1>
-        <p className="muted">내가 요청한 도메인 권한의 승인 결과입니다. 새로 요청하려면 <Link to="/requests/domain">도메인 권한 요청</Link>으로 가세요.</p>
-      </div>
       <section className="card">
+        <h2 className="section-title">내 도메인 권한 요청 결과</h2>
         {grants.isLoading && <p className="muted">불러오는 중…</p>}
         {grants.error && <p className="error">{grants.error.message}</p>}
         {grants.data?.length === 0 && <p className="muted">아직 요청한 도메인 권한이 없습니다.</p>}
@@ -110,7 +105,7 @@ export function DomainRequestPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["access-requests"] });
       queryClient.invalidateQueries({ queryKey: ["community"] });
-      navigate("/requests/approvals");
+      navigate("/requests/domain");
     },
   });
   if (me?.role === "platform_admin") return <Navigate to="/admin#access-requests" replace />;
@@ -124,7 +119,7 @@ export function DomainRequestPage() {
     <>
       <div className="page-header">
         <h1>도메인 권한 요청</h1>
-        <p className="muted">다른 벤더 도메인의 문서(다른 파트너사가 올린 문서 포함)를 열람하려면 관리자 승인이 필요합니다. 승인 결과는 <Link to="/requests/approvals">권한 승인</Link>에서 봅니다.</p>
+        <p className="muted">다른 벤더 도메인의 문서(다른 파트너사가 올린 문서 포함)를 열람하려면 관리자 승인이 필요합니다. 승인 결과는 아래 표에서 봅니다.</p>
       </div>
       <section className="card">
         <form className="form" onSubmit={submit}>
@@ -152,6 +147,7 @@ export function DomainRequestPage() {
           <div><button className="primary" disabled={send.isPending}>{send.isPending ? "보내는 중…" : "권한 요청 보내기"}</button></div>
         </form>
       </section>
+      <MyDomainRequests />
     </>
   );
 }

@@ -141,6 +141,15 @@ class Partner(Base):
     vendors: Mapped[list[Vendor]] = relationship(secondary=partner_vendors)
 
 
+# 관리자가 사용자별로 지정한 벤더 도메인 (users.custom_domains 가 참일 때만 쓰고, 아니면 소속 파트너사의 도메인)
+user_vendors = Table(
+    "user_vendors",
+    Base.metadata,
+    Column("user_id", ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
+    Column("vendor_id", ForeignKey("vendors.id", ondelete="CASCADE"), primary_key=True),
+)
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -158,7 +167,10 @@ class User(Base):
     partner_id: Mapped[int | None] = mapped_column(ForeignKey("partners.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
+    custom_domains: Mapped[bool | None] = mapped_column(Boolean)  # 참이면 아래 vendors 만 접근 (파트너사 기본 대신)
+
     partner: Mapped[Partner | None] = relationship()
+    vendors: Mapped[list[Vendor]] = relationship(secondary=user_vendors)
 
 
 class DocType(StrEnum):
@@ -675,3 +687,26 @@ class DocumentShare(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     partner: Mapped[Partner] = relationship()
+
+
+class PermissionRequest(Base):
+    """권한 승인 요청: 업무 구분 밖의 권한(예: 영업이 가이드 등록·요약)을 관리자에게 신청한다. 승인되면 그 권한이 더해진다."""
+
+    __tablename__ = "permission_requests"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    scopes: Mapped[list] = mapped_column(JSON, default=list)  # guide | spec | quote
+    reason: Mapped[str] = mapped_column(Text)
+    # 신청 화면의 가입자 정보 (가입 정보로 미리 채우고 고칠 수 있음)
+    name: Mapped[str | None] = mapped_column(String(100))
+    email: Mapped[str | None] = mapped_column(String(255))
+    company: Mapped[str | None] = mapped_column(String(200))
+    phone: Mapped[str | None] = mapped_column(String(50))
+    status: Mapped[str] = mapped_column(String(20), default="pending")  # pending | approved | rejected | revoked
+    decided_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    decision_note: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    user: Mapped[User] = relationship(foreign_keys=[user_id])

@@ -2,10 +2,12 @@
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
+import { useAuth } from "../auth";
 import { LANGUAGES, STATUS_LABELS, languageLabel } from "../labels";
 import type { DocumentDetail, GuideBrief, Section, Usage } from "../types";
 
 export default function DocumentPage() {
+  const { me } = useAuth();
   const id = Number(useParams().id);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -36,6 +38,8 @@ export default function DocumentPage() {
   if (doc.isLoading) return <p className="muted">불러오는 중…</p>;
   if (doc.error || !doc.data) return <p className="error">{doc.error?.message ?? "문서를 찾을 수 없습니다."}</p>;
   const d = doc.data;
+  // 요약은 가이드 권한이 있고, 내 조직 문서일 때만 (공유받음·도메인 열람은 읽기 전용)
+  const canSummarize = (me?.role === "platform_admin" || !!me?.permissions.includes("guide")) && d.access === "own";
   const included = d.sections.filter((s) => s.included);
   const includedChars = included.reduce((sum, s) => sum + s.char_count, 0);
   const u = usage.data;
@@ -69,7 +73,17 @@ export default function DocumentPage() {
         </section>
       )}
 
-      {d.status === "parsed" && (
+      {d.status === "parsed" && !canSummarize && (
+        <section className="card">
+          <p className="muted">
+            {d.access !== "own"
+              ? "다른 조직이 공유했거나 도메인 권한으로 열람하는 문서입니다. 보기와 내려받기만 할 수 있습니다."
+              : "가이드 등록·요약 권한이 없어 이 문서는 내려받기만 할 수 있습니다. 필요하면 요청 > 권한 승인 요청에서 신청하세요."}
+          </p>
+        </section>
+      )}
+
+      {d.status === "parsed" && canSummarize && (
         <>
           <section className="card">
             <h2>요약 시작</h2>

@@ -62,6 +62,7 @@ class UserOut(ORM):
 class MeOut(UserOut):
     partner_name: str | None
     vendors: list[VendorOut]
+    permissions: list[str] = []  # guide | spec | quote | brochure (업무 구분 기본 + 승인된 추가 권한)
 
 
 class ReadGrantBrief(BaseModel):
@@ -73,8 +74,11 @@ class AdminUserOut(UserOut):
     """관리자 가입자 목록용: 소속, 할당된 도메인, 열람 권한까지."""
 
     partner_name: str | None
-    domains: list[str]  # 소속 파트너사의 정식 도메인 (플랫폼 관리자는 전체)
+    domains: list[str]  # 접근 도메인 (사용자별 지정이 있으면 그것, 없으면 소속 파트너사의 도메인. 플랫폼 관리자는 전체)
     read_grants: list[ReadGrantBrief]  # 기간 한정 읽기 전용 열람 (유효한 것만)
+    custom_domains: bool = False  # 사용자별로 도메인을 지정했는지
+    domain_ids: list[int] = []
+    permissions: list[str] = []
 
 
 class ApproveIn(BaseModel):

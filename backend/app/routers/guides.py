@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..deps import get_active_user, get_document_for_user, get_guide_for_user, is_admin
+from ..deps import needs, get_active_user, get_document_for_user, get_guide_for_user, is_admin
 from ..models import (
     DocStatus,
     Guide,
@@ -33,7 +33,7 @@ from ..services.usage import charge, pages_for_chars
 router = APIRouter(prefix="/api", tags=["요약 가이드"])
 
 
-@router.post("/documents/{document_id}/guides", response_model=GuideBrief, status_code=status.HTTP_201_CREATED)
+@router.post("/documents/{document_id}/guides", response_model=GuideBrief, status_code=status.HTTP_201_CREATED, dependencies=[Depends(needs("guide"))])
 def create_guide(
     document_id: int, body: GuideCreate, user: User = Depends(get_active_user), db: Session = Depends(get_db)
 ) -> Guide:
@@ -95,7 +95,7 @@ def get_guide(guide_id: int, user: User = Depends(get_active_user), db: Session 
     )
 
 
-@router.post("/guides/{guide_id}/summaries/{summary_id}/approve", response_model=SummaryOut)
+@router.post("/guides/{guide_id}/summaries/{summary_id}/approve", response_model=SummaryOut, dependencies=[Depends(needs("guide"))])
 def approve_summary(
     guide_id: int, summary_id: int, user: User = Depends(get_active_user), db: Session = Depends(get_db)
 ) -> SectionSummary:
@@ -109,7 +109,7 @@ def approve_summary(
     return summary
 
 
-@router.post("/guides/{guide_id}/approve-all", response_model=BulkApproveOut)
+@router.post("/guides/{guide_id}/approve-all", response_model=BulkApproveOut, dependencies=[Depends(needs("guide"))])
 def approve_all(guide_id: int, user: User = Depends(get_active_user), db: Session = Depends(get_db)) -> BulkApproveOut:
     """초안 상태인 요약을 한 번에 승인한다. 생성 중·실패·대기 항목은 건드리지 않는다."""
     guide = get_guide_for_user(db, user, guide_id)
@@ -123,7 +123,7 @@ def approve_all(guide_id: int, user: User = Depends(get_active_user), db: Sessio
     return BulkApproveOut(approved=len(drafts), remaining=remaining, guide_status=guide.status)
 
 
-@router.put("/guides/{guide_id}/summaries/{summary_id}", response_model=SummaryOut)
+@router.put("/guides/{guide_id}/summaries/{summary_id}", response_model=SummaryOut, dependencies=[Depends(needs("guide"))])
 def edit_summary(
     guide_id: int, summary_id: int, body: SummaryEdit,
     user: User = Depends(get_active_user), db: Session = Depends(get_db),
@@ -144,7 +144,7 @@ def edit_summary(
     return summary
 
 
-@router.post("/guides/{guide_id}/summaries/{summary_id}/regenerate", response_model=SummaryOut)
+@router.post("/guides/{guide_id}/summaries/{summary_id}/regenerate", response_model=SummaryOut, dependencies=[Depends(needs("guide"))])
 def regenerate_summary(
     guide_id: int, summary_id: int, body: RegenerateIn,
     user: User = Depends(get_active_user), db: Session = Depends(get_db),

@@ -17,6 +17,7 @@ from .models import (
     AccessGrant,
     GrantStatus,
     Guide,
+    PermissionRequest,
     Role,
     SourceDocument,
     User,
@@ -56,7 +57,38 @@ def is_admin(user: User) -> bool:
 def accessible_vendors(db: Session, user: User) -> list[Vendor]:
     if is_admin(user):
         return list(db.scalars(select(Vendor).order_by(Vendor.name)))
+    if user.custom_domains:  # 관리자가 사용자별로 지정한 도메인
+        return sorted(user.vendors, key=lambda v: v.name)
     return sorted(user.partner.vendors, key=lambda v: v.name) if user.partner else []
+
+
+# ---------- 업무 구분별 권한 ----------
+# guide: 가이드 등록·요약·검토·최종 문서 / spec: 규격서 등록 / quote: 견적서 자료·양식 등록·생성 / brochure: 브로슈어 등록
+# 내려받기·보기는 권한과 관계없이 열람 범위 안이면 된다.
+ALL_PERMISSIONS = ("guide", "spec", "quote", "brochure")
+TRACK_PERMISSIONS = {"engineer": {"guide", "brochure"}, "sales": {"spec", "quote", "brochure"}}
+PERMISSION_LABELS = {"guide": "가이드 등록·요약", "spec": "규격서 등록", "quote": "견적서 등록·생성", "brochure": "브로슈어 등록"}
+
+
+def user_permissions(db: Session, user: User) -> set[str]:
+    """업무 구분의 기본 권한 + 승인된 권한 승인 요청. 플랫폼 관리자는 전부."""
+    if is_admin(user):
+        return set(ALL_PERMISSIONS)
+    perms = set(TRACK_PERMISSIONS.get(user.track or "engineer", TRACK_PERMISSIONS["engineer"]))
+    approved = db.scalars(
+        select(PermissionRequest).where(PermissionRequest.user_id == user.id, PermissionRequest.status == "approved")
+    )
+    for request in approved:
+        perms |= set(request.scopes or [])
+    return perms
+
+
+def require_permission(db: Session, user: User, permission: str) -> None:
+    if permission not in user_permissions(db, user):
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            f"{PERMISSION_LABELS.get(permission, permission)} 권한이 없습니다. 요청 > 권한 승인 요청에서 신청하세요.",
+        )
 
 
 def ensure_vendor_access(db: Session, user: User, vendor_id: int) -> None:
@@ -155,3 +187,12 @@ def require_domain_write(db: Session, user: User, vendor_id: int) -> None:
 def as_utc(value: datetime) -> datetime:
     """SQLite 는 시간대를 저장하지 않으므로 UTC 로 간주해 시간대를 붙인다."""
     return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+
+def needs(permission: str):
+    """라우트 의존성: dependencies=[Depends(needs("guide"))] 처럼 쓴다."""
+
+    def check(user: User = Depends(get_active_user), db: Session = Depends(get_db)) -> None:
+        require_permission(db, user, permission)
+
+    return check

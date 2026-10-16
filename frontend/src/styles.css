@@ -401,3 +401,13 @@ table.table-resizable td :is(button, .badge) { white-space: nowrap; overflow-wra
 
 .icon-button.danger:hover:not(:disabled) { color: var(--danger); border-color: var(--danger); }
 .share-list { display: grid; gap: 8px; margin-top: 12px; max-height: 50vh; overflow: auto; }
+
+/* 관리자 가입자 수정 펼침 */
+.user-edit { display: grid; gap: 14px; padding: 6px 0; }
+.user-edit-block { display: grid; gap: 6px; }
+
+/* 권한 승인 요청: 범위 선택 */
+.scope-list { display: grid; gap: 8px; margin-top: 6px; }
+.scope-option { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; }
+.scope-option input { margin-top: 3px; }
+.scope-option.owned { background: var(--surface-2); cursor: default; }

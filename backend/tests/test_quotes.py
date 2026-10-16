@@ -25,8 +25,9 @@ def test_sales_track_and_quote_files(client):
     engineer = _signup_and_approve(client, admin, "eng@s.example.com", partner["id"])
 
     assert client.get("/api/auth/me", headers=sales).json()["track"] == "sales"
-    # 엔지니어는 견적 자료를 쓸 수 없다
-    assert client.get("/api/quote-files", headers=engineer).status_code == 403
+    # 엔지니어는 견적 자료를 내려받기만 (올리기 불가)
+    assert client.get("/api/quote-files", headers=engineer).status_code == 200
+    assert client.post("/api/quote-files", files={"file": ("a.pdf", b"%PDF")}, headers=engineer).status_code == 403
 
     # 견적서 양식·견적서용 로고 (파트너사 자산)
     r = client.post(

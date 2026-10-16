@@ -8,7 +8,7 @@ from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..deps import get_active_user, is_admin
+from ..deps import get_active_user, is_admin, require_permission
 from ..models import Partner, Role, User
 from ..schemas import PartnerOut
 from ..services.storage import get_storage
@@ -50,6 +50,8 @@ def upload_asset(
     user: User = Depends(get_active_user), db: Session = Depends(get_db),
 ) -> Partner:
     partner = _partner_for(db, user, partner_id, manage=True)
+    if kind.startswith("quote_"):
+        require_permission(db, user, "quote")  # 견적서 양식·로고는 견적서 권한이 있어야
     if file is None and not storage_key:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "파일을 선택하세요.")
     ext = Path(file.filename or "" if file is not None else storage_key).suffix.lower()

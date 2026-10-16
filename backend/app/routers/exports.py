@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..deps import get_active_user, get_guide_for_user, is_admin
+from ..deps import needs, get_active_user, get_guide_for_user, is_admin
 from ..models import Export, ExportStatus, Guide, GuideStatus, JobKind, Partner, User
 from ..schemas import ExportCreate, ExportOut
 from ..services.jobs import enqueue
@@ -16,7 +16,7 @@ MEDIA_TYPES = {
 }
 
 
-@router.post("/guides/{guide_id}/exports", response_model=ExportOut, status_code=status.HTTP_201_CREATED)
+@router.post("/guides/{guide_id}/exports", response_model=ExportOut, status_code=status.HTTP_201_CREATED, dependencies=[Depends(needs("guide"))])
 def create_export(
     guide_id: int, body: ExportCreate, user: User = Depends(get_active_user), db: Session = Depends(get_db)
 ) -> Export:

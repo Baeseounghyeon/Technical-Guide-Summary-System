@@ -12,8 +12,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..deps import get_active_user, is_admin
-from ..models import QuoteFile, Track, User, Vendor
+from ..deps import get_active_user, is_admin, require_permission
+from ..models import QuoteFile, User, Vendor
 from ..schemas import QuoteFileOut
 from ..services.storage import get_storage
 from .uploads import store_upload
@@ -24,9 +24,9 @@ Category = Literal["spec", "feature", "price", "other"]
 ALLOWED = {".pdf", ".docx", ".xlsx", ".pptx", ".csv", ".txt", ".png", ".jpg", ".jpeg"}
 
 
-def require_sales(user: User = Depends(get_active_user)) -> User:
-    if not (is_admin(user) or user.track == Track.SALES):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "영업 계정만 쓸 수 있습니다.")
+def require_sales(user: User = Depends(get_active_user), db: Session = Depends(get_db)) -> User:
+    """견적서 자료 올리기·지우기: 견적서 권한(영업 기본, 다른 업무는 권한 승인 요청으로)."""
+    require_permission(db, user, "quote")
     return user
 
 
@@ -42,7 +42,7 @@ def _file_for(db: Session, user: User, file_id: int) -> QuoteFile:
 
 
 @router.get("", response_model=list[QuoteFileOut])
-def list_files(partner_id: int | None = None, user: User = Depends(require_sales), db: Session = Depends(get_db)) -> list[QuoteFileOut]:
+def list_files(partner_id: int | None = None, user: User = Depends(get_active_user), db: Session = Depends(get_db)) -> list[QuoteFileOut]:
     pid = partner_id if is_admin(user) and partner_id is not None else user.partner_id
     query = select(QuoteFile).where(QuoteFile.partner_id == pid).order_by(QuoteFile.created_at.desc())
     return [_out(f) for f in db.scalars(query)]
@@ -86,7 +86,7 @@ def upload_file(
 
 
 @router.get("/{file_id}/download")
-def download_file(file_id: int, user: User = Depends(require_sales), db: Session = Depends(get_db)) -> Response:
+def download_file(file_id: int, user: User = Depends(get_active_user), db: Session = Depends(get_db)) -> Response:
     f = _file_for(db, user, file_id)
     return get_storage().response(f.file_path, f.filename, "application/octet-stream")
 

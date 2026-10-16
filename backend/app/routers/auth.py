@@ -3,7 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..deps import accessible_vendors, get_active_user
+from ..deps import accessible_vendors, get_active_user, user_permissions
 from ..models import User, UserStatus
 from ..schemas import LoginIn, MeOut, SignupIn, TokenOut, UserOut, VendorOut
 from ..security import create_access_token, hash_password, verify_password
@@ -48,4 +48,5 @@ def me(user: User = Depends(get_active_user), db: Session = Depends(get_db)) -> 
         **UserOut.model_validate(user).model_dump(),
         partner_name=user.partner.name if user.partner else None,
         vendors=[VendorOut.model_validate(v) for v in accessible_vendors(db, user)],
+        permissions=sorted(user_permissions(db, user)),
     )

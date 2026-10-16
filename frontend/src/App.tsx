@@ -17,7 +17,8 @@ import GuidesPage, { OrgTypePage, RegisteredTypePage } from "./pages/GuidesPage"
 import LoginPage from "./pages/LoginPage";
 import PartnerGuidePage from "./pages/PartnerGuidePage";
 import QuotesPage from "./pages/QuotesPage";
-import { ApprovalsPage, DomainRequestPage, MyRequestsPage, OrgGuidesPage } from "./pages/RequestsPages";
+import { DomainRequestPage, MyRequestsPage, OrgGuidesPage } from "./pages/RequestsPages";
+import { PermissionRequestPage } from "./pages/PermissionPages";
 import GuideSharePage from "./pages/GuideSharePage";
 import NotificationBell from "./NotificationBell";
 import SettingsPage from "./pages/SettingsPage";
@@ -35,7 +36,7 @@ export default function App() {
       <Route path="/documents/registered" element={<Protected><RegisteredDocumentsPage /></Protected>} />
       <Route path="/my-requests" element={<Navigate to="/requests" replace />} />
       <Route path="/requests" element={<Protected><MyRequestsPage /></Protected>} />
-      <Route path="/requests/approvals" element={<Protected><ApprovalsPage /></Protected>} />
+      <Route path="/requests/approvals" element={<Protected><PermissionRequestPage /></Protected>} />
       <Route path="/requests/domain" element={<Protected><DomainRequestPage /></Protected>} />
       <Route path="/specs" element={<Protected><RegisteredTypePage key="spec" docType="spec" /></Protected>} />
       <Route path="/specs/org" element={<Protected><OrgTypePage key="spec-org" docType="spec" /></Protected>} />
@@ -48,7 +49,7 @@ export default function App() {
       <Route path="/guides/:id" element={<Protected><GuidePage /></Protected>} />
       <Route path="/partner-guides/:id" element={<Protected><PartnerGuidePage /></Protected>} />
       <Route path="/shared" element={<Protected><SharedPage /></Protected>} />
-      <Route path="/quotes" element={<Protected sales><QuotesPage /></Protected>} />
+      <Route path="/quotes" element={<Protected><QuotesPage /></Protected>} />
       <Route path="/community" element={<Protected><CommunityPage /></Protected>} />
       <Route path="/community/:vendorId" element={<Protected><DomainPage /></Protected>} />
       <Route path="/community/posts/:id" element={<Protected><PostPage /></Protected>} />
@@ -70,6 +71,7 @@ function Protected({ children, roles, sales }: { children: ReactNode; roles?: Ro
   const isAdmin = me.role === "platform_admin";
   const isSales = me.track === "sales";
   if (sales && !isSales && !isAdmin) return <Navigate to="/" replace />;
+  const can = (p: string) => isAdmin || me.permissions.includes(p);
 
   return (
     <>
@@ -81,8 +83,9 @@ function Protected({ children, roles, sales }: { children: ReactNode; roles?: Ro
           <NavLink to="/" end>홈</NavLink>
           <DocsMenu />
           <TypeMenu base="/specs" label="규격서" />
-          {!isSales && <GuidesMenu />}
-          {(isSales || isAdmin) && <NavLink to="/quotes">견적서</NavLink>}
+          {/* 엔지니어·영업 모두 보이고, 등록·생성 항목은 권한이 있을 때만 (없으면 내려받기만) */}
+          <GuidesMenu canEdit={can("guide")} />
+          <NavLink to="/quotes">견적서</NavLink>
           <TypeMenu base="/brochures" label="브로슈어" />
           <NavLink to="/community">커뮤니티</NavLink>
           <RequestsMenu isAdmin={isAdmin} />
@@ -124,13 +127,13 @@ function TypeMenu({ base, label }: { base: string; label: string }) {
 }
 
 /** 상단 '가이드' 메뉴: 누르면 등록한 가이드, 마우스를 올리면 가이드 등록·등록한 가이드·조직 요청 가이드·가이드 공유. */
-function GuidesMenu() {
+function GuidesMenu({ canEdit }: { canEdit: boolean }) {
   const { pathname, search } = useLocation();
   const items = [
-    { key: "upload", label: "가이드 등록", to: "/documents?type=guide", active: pathname === "/documents" && search.includes("type=guide") },
+    ...(canEdit ? [{ key: "upload", label: "가이드 등록", to: "/documents?type=guide", active: pathname === "/documents" && search.includes("type=guide") }] : []),
     { key: "registered", label: "등록한 가이드", to: "/guides", active: pathname === "/guides" },
     { key: "org", label: "조직 요청 가이드", to: "/guides/org", active: pathname === "/guides/org" },
-    { key: "share", label: "가이드 공유", to: "/guides/share", active: pathname === "/guides/share" },
+    ...(canEdit ? [{ key: "share", label: "가이드 공유", to: "/guides/share", active: pathname === "/guides/share" }] : []),
   ];
   return <HoverMenu to="/guides" label="가이드" items={items} alsoActive={pathname === "/shared"} />;
 }
@@ -140,7 +143,7 @@ function RequestsMenu({ isAdmin }: { isAdmin: boolean }) {
   const { pathname } = useLocation();
   const items = [
     { key: "mine", label: "내 요청 사항", to: "/requests", active: pathname === "/requests" },
-    { key: "approvals", label: "권한 승인", to: isAdmin ? "/admin#access-requests" : "/requests/approvals", active: pathname === "/requests/approvals" },
+    { key: "approvals", label: "권한 승인 요청", to: isAdmin ? "/admin#permission-requests" : "/requests/approvals", active: pathname === "/requests/approvals" },
     ...(isAdmin ? [] : [{ key: "domain", label: "도메인 권한 요청", to: "/requests/domain", active: pathname === "/requests/domain" }]),
   ];
   return <HoverMenu to="/requests" label="요청" items={items} />;

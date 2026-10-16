@@ -12,8 +12,12 @@ const IN_PROGRESS = new Set(["uploaded", "parsing"]);
  *  ?type=spec|guide|brochure 로 오면 등록할 종류를 미리 골라 둔다 (상단 메뉴의 '가이드 등록' 등). */
 export default function DocumentsPage() {
   const navigate = useNavigate();
+  const { me } = useAuth();
   const [params] = useSearchParams();
-  const preset = (DOC_TYPES.some((t) => t.key === params.get("type")) ? params.get("type") : "guide") as DocTypeKey;
+  // 등록할 수 있는 종류만 (엔지니어: 가이드·브로슈어 / 영업: 규격서·브로슈어 / 관리자: 전부 + 승인된 추가 권한)
+  const allowed = DOC_TYPES.filter((t) => me?.role === "platform_admin" || me?.permissions.includes(t.key)).map((t) => t.key);
+  const wanted = params.get("type") as DocTypeKey | null;
+  const preset = (wanted && allowed.includes(wanted) ? wanted : allowed[0] ?? "brochure") as DocTypeKey;
   return (
     <>
       <div className="page-header">
@@ -23,7 +27,7 @@ export default function DocumentsPage() {
           <Link to="/documents/registered">등록한 문서</Link>에서 봅니다.
         </p>
       </div>
-      <UploadForm key={preset} defaultType={preset} onUploaded={(type) => navigate(`/documents/registered?type=${type}`)} />
+      <UploadForm key={preset} defaultType={preset} allowed={allowed} onUploaded={(type) => navigate(`/documents/registered?type=${type}`)} />
     </>
   );
 }
@@ -269,7 +273,9 @@ function DownloadDialog({ doc, onClose }: { doc: DocumentSummary; onClose: () =>
   );
 }
 
-function UploadForm({ defaultType, onUploaded }: { defaultType: DocTypeKey; onUploaded: (type: DocTypeKey) => void }) {
+function UploadForm({
+  defaultType, allowed, onUploaded,
+}: { defaultType: DocTypeKey; allowed: DocTypeKey[]; onUploaded: (type: DocTypeKey) => void }) {
   const { me } = useAuth();
   const queryClient = useQueryClient();
   const vendors = me?.vendors ?? [];
@@ -323,7 +329,7 @@ function UploadForm({ defaultType, onUploaded }: { defaultType: DocTypeKey; onUp
             <label style={{ flex: "0 0 200px" }}>
               등록할 탭 (문서 종류)
               <select value={docType} onChange={(e) => setDocType(e.target.value as DocTypeKey)}>
-                {DOC_TYPES.map((t) => <option key={t.key} value={t.key}>{t.full}</option>)}
+                {DOC_TYPES.filter((t) => allowed.includes(t.key)).map((t) => <option key={t.key} value={t.key}>{t.full}</option>)}
               </select>
             </label>
             {docType === "guide" && (

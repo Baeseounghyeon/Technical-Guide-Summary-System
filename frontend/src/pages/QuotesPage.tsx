@@ -125,7 +125,8 @@ function AssetTab({
   const inputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const ref = partner[`${kind}_path`];
-  const canManage = me?.role === "platform_admin" || me?.role === "partner_admin";
+  // 양식·로고 변경: 견적서 권한이 있는 회사 관리자 (플랫폼 관리자는 항상)
+  const canManage = me?.role === "platform_admin" || (me?.role === "partner_admin" && !!me?.permissions.includes("quote"));
 
   const upload = useMutation({
     mutationFn: (f: File) => {
@@ -166,7 +167,7 @@ function AssetTab({
           <button className="primary" disabled={!file || upload.isPending}>{upload.isPending ? "올리는 중…" : "업로드"}</button>
         </form>
       ) : (
-        <p className="muted">양식·로고는 회사 관리자만 바꿀 수 있습니다.</p>
+        <p className="muted">양식·로고는 견적서 권한이 있는 회사 관리자만 바꿀 수 있습니다.</p>
       )}
       {upload.error && <p className="error">{upload.error.message}</p>}
     </section>
@@ -190,6 +191,8 @@ function AssetPreview({ partnerId, kind, refPath }: { partnerId: number; kind: s
 
 function FilesTab({ partnerId }: { partnerId: number }) {
   const { me } = useAuth();
+  // 엔지니어 등 견적서 권한이 없으면 내려받기만
+  const canEdit = me?.role === "platform_admin" || !!me?.permissions.includes("quote");
   const queryClient = useQueryClient();
   const key = ["quote-files", partnerId];
   const files = useQuery({ queryKey: key, queryFn: () => api<QuoteFile[]>(`/quote-files?partner_id=${partnerId}`) });
@@ -224,7 +227,7 @@ function FilesTab({ partnerId }: { partnerId: number }) {
 
   return (
     <>
-      <section className="card">
+      {canEdit && <section className="card">
         <h2 className="section-title">참고 자료 올리기</h2>
         <p className="muted">벤더 규격서, 제품 기능 소개, 가격표 등 견적서를 만들 때 참고할 파일입니다. 같은 회사의 영업 담당자가 함께 씁니다.</p>
         <form
@@ -255,7 +258,7 @@ function FilesTab({ partnerId }: { partnerId: number }) {
           <button className="primary" disabled={!file || upload.isPending}>{upload.isPending ? "올리는 중…" : "올리기"}</button>
         </form>
         {upload.error && <p className="error">{upload.error.message}</p>}
-      </section>
+      </section>}
 
       <section className="card">
         <h2 className="section-title">등록된 참고 자료</h2>
@@ -274,13 +277,13 @@ function FilesTab({ partnerId }: { partnerId: number }) {
                     <td>{f.note ?? <span className="muted">-</span>}</td>
                     <td style={{ whiteSpace: "nowrap" }}>{new Date(f.created_at).toLocaleDateString()}</td>
                     <td>
-                      <button
+                      {canEdit && <button
                         className="link danger-link"
                         disabled={remove.isPending}
                         onClick={() => window.confirm(`${f.filename} 을(를) 목록에서 삭제할까요?`) && remove.mutate(f.id)}
                       >
                         삭제
-                      </button>
+                      </button>}
                     </td>
                   </tr>
                 ))}

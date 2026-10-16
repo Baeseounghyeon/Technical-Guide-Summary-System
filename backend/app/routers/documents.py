@@ -11,6 +11,8 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..deps import (
+    needs,
+    require_permission,
     accessible_vendors,
     ensure_vendor_access,
     get_active_user,
@@ -48,6 +50,7 @@ def create_document(
 ) -> DocumentOut:
     """파일(PDF/Word/PPT) 또는 웹 문서 URL을 등록하고 파싱 작업을 예약한다."""
     ensure_vendor_access(db, user, vendor_id)
+    require_permission(db, user, doc_type)  # 엔지니어: 가이드·브로슈어 / 영업: 규격서·브로슈어 (+ 승인된 추가 권한)
     has_file = file is not None or bool(storage_key)
     if has_file == bool(url):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "파일 또는 URL 중 하나만 입력하세요.")
@@ -140,7 +143,7 @@ def get_document(
     )
 
 
-@router.patch("/sections/{section_id}", response_model=SectionOut)
+@router.patch("/sections/{section_id}", response_model=SectionOut, dependencies=[Depends(needs("guide"))])
 def update_section(
     section_id: int, body: SectionPatch, user: User = Depends(get_active_user), db: Session = Depends(get_db)
 ) -> SectionOut:

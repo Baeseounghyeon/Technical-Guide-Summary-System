@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { GRANT_STATUS, ROLE_LABELS, TRACK_LABELS } from "../labels";
+import { AdminPermissionRequests } from "./PermissionPages";
 import type { AccessGrant, AdminUser, Partner, PartnerUsage, Role, Track, UsageOverview, Vendor } from "../types";
 
 export default function AdminPage() {
@@ -13,6 +14,7 @@ export default function AdminPage() {
         <p className="muted">가입자 승인·수정·삭제, AI 사용량과 회사별 한도, 다른 도메인 권한 신청, 파트너사와 벤더 도메인을 관리합니다.</p>
       </div>
       <Members />
+      <AdminPermissionRequests />
       <AiUsage />
       <AccessRequests />
       <PartnersAndVendors />
@@ -78,19 +80,19 @@ function Members() {
       <div className="table-wrap">
         <table style={{ minWidth: 900 }}>
           <thead>
-            <tr><th>이름</th><th>소속</th><th>이메일</th><th>전화번호</th><th>도메인</th><th>상태</th><th /></tr>
+            <tr><th>소속</th><th>이름</th><th>이메일</th><th>전화번호</th><th>도메인</th><th>상태</th><th /></tr>
           </thead>
           <tbody>
             {shown.map((u) => (
               <Fragment key={u.id}>
               <tr className={u.status === "pending" ? "highlight" : ""}>
-                <td style={{ whiteSpace: "nowrap" }} title={`가입: ${new Date(u.created_at).toLocaleString()}`}>{u.name}</td>
                 <td style={{ minWidth: 120 }}>
                   {u.partner_name ?? <span className="muted">미지정</span>}
                   {(u.department || (!u.partner_name && u.company_name)) && (
                     <div className="muted">{[u.department, !u.partner_name && u.company_name ? `신청: ${u.company_name}` : null].filter(Boolean).join(" · ")}</div>
                   )}
                 </td>
+                <td style={{ whiteSpace: "nowrap" }} title={`가입: ${new Date(u.created_at).toLocaleString()}`}>{u.name}</td>
                 <td>{u.email}</td>
                 <td style={{ whiteSpace: "nowrap" }}>{u.phone || "-"}</td>
                 <td>
@@ -258,53 +260,136 @@ function AccessRequestRow({ grant, onDone }: { grant: AccessGrant; onDone: () =>
   );
 }
 
-/** 가입 승인 또는 소속·권한 변경 (같은 승인 API 를 쓴다). */
+const PERMISSION_LABELS: Record<string, string> = { guide: "가이드", spec: "규격서", quote: "견적서", brochure: "브로슈어" };
+
+/** 가입 승인 또는 수정: 가입자 정보(성명·회사명·이메일·전화번호·부서), 소속·권한·업무 구분, 사용자별 도메인을 한 번에 저장한다. */
 function AssignForm({ user, partners, onDone }: { user: AdminUser; partners: Partner[]; onDone: () => void }) {
   const queryClient = useQueryClient();
+  const vendors = useQuery({ queryKey: ["vendors"], queryFn: () => api<Vendor[]>("/vendors") });
   // 고르기 전에는 현재 소속 → 신청 회사명과 같은 파트너사 순으로 제안한다 (목록이 늦게 와도 반영되도록 매번 계산).
   const [chosen, setPartnerId] = useState<number | "" | undefined>(undefined);
   const partnerId = chosen ?? user.partner_id ?? partners.find((p) => p.name === user.company_name)?.id ?? "";
   const [role, setRole] = useState<Role>(user.status === "pending" ? "engineer" : user.role);
   const [track, setTrack] = useState<Track>(user.track ?? "engineer");
+  const [profile, setProfile] = useState({
+    name: user.name,
+    company_name: user.company_name ?? "",
+    email: user.email,
+    phone: user.phone ?? "",
+    department: user.department ?? "",
+  });
+  // 도메인: 기본은 소속 파트너사의 도메인, 체크를 끄면 사용자별로 체크한 것만
+  const [useDefault, setUseDefault] = useState(!user.custom_domains);
+  const [domainIds, setDomainIds] = useState<Set<number>>(new Set(user.domain_ids));
+  const partnerVendorIds = new Set(partners.find((p) => p.id === partnerId)?.vendors.map((v) => v.id) ?? []);
+  const isAdminRole = role === "platform_admin";
+
   const save = useMutation({
-    mutationFn: () =>
-      api(`/admin/users/${user.id}/approve`, {
+    mutationFn: async () => {
+      await api(`/admin/users/${user.id}/profile`, { method: "PUT", json: profile });
+      await api(`/admin/users/${user.id}/approve`, {
         method: "POST",
         json: { partner_id: partnerId === "" ? null : partnerId, role, track },
-      }),
+      });
+      if (!isAdminRole) {
+        await api(`/admin/users/${user.id}/domains`, {
+          method: "PUT",
+          json: useDefault ? { use_partner_default: true } : { vendor_ids: [...domainIds] },
+        });
+      }
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin"] });
       onDone();
     },
   });
   const pending = user.status === "pending";
+  const set = (key: keyof typeof profile) => (e: { target: { value: string } }) => setProfile((p) => ({ ...p, [key]: e.target.value }));
+  const toggleDomain = (id: number) =>
+    setDomainIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   return (
-    <div className="form-row">
-      <label>
-        소속 파트너사
-        <select value={partnerId} onChange={(e) => setPartnerId(Number(e.target.value) || "")}>
-          <option value="">{role === "platform_admin" ? "(없음)" : "파트너사 선택"}</option>
-          {partners.map((p) => <option key={p.id} value={p.id}>{p.name} {p.vendors.length ? `(${p.vendors.map((v) => v.name).join(", ")})` : "(도메인 없음)"}</option>)}
-        </select>
-      </label>
-      <label style={{ flex: "0 0 180px" }}>
-        권한
-        <select value={role} onChange={(e) => setRole(e.target.value as Role)}>
-          {Object.entries(ROLE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-        </select>
-      </label>
-      <label style={{ flex: "0 0 140px" }}>
-        업무 구분
-        <select value={track} onChange={(e) => setTrack(e.target.value as Track)}>
-          {Object.entries(TRACK_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-        </select>
-      </label>
+    <div className="user-edit">
+      <div className="user-edit-block">
+        <strong>가입자 정보</strong>
+        <div className="form-row">
+          <label>성명<input value={profile.name} onChange={set("name")} required /></label>
+          <label>회사명<input value={profile.company_name} onChange={set("company_name")} /></label>
+          <label>이메일<input type="email" value={profile.email} onChange={set("email")} required /></label>
+          <label>전화번호<input value={profile.phone} onChange={set("phone")} /></label>
+          <label>부서<input value={profile.department} onChange={set("department")} /></label>
+        </div>
+      </div>
+      <div className="user-edit-block">
+        <strong>소속 · 권한</strong>
+        <div className="form-row">
+          <label>
+            소속 파트너사
+            <select value={partnerId} onChange={(e) => setPartnerId(Number(e.target.value) || "")}>
+              <option value="">{isAdminRole ? "(없음)" : "파트너사 선택"}</option>
+              {partners.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </label>
+          <label style={{ flex: "0 0 180px" }}>
+            권한
+            <select value={role} onChange={(e) => setRole(e.target.value as Role)}>
+              {Object.entries(ROLE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+          </label>
+          <label style={{ flex: "0 0 140px" }}>
+            업무 구분
+            <select value={track} onChange={(e) => setTrack(e.target.value as Track)}>
+              {Object.entries(TRACK_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+          </label>
+        </div>
+        {!pending && (
+          <p className="muted" style={{ margin: "6px 0 0" }}>
+            등록 가능: {user.permissions.map((p) => PERMISSION_LABELS[p] ?? p).join(", ") || "-"} (업무 구분 기본 + 승인된 권한 요청)
+          </p>
+        )}
+      </div>
+      <div className="user-edit-block">
+        <strong>도메인</strong>
+        {isAdminRole ? (
+          <p className="muted">플랫폼 관리자는 모든 도메인에 접근합니다.</p>
+        ) : (
+          <>
+            <label className="check" style={{ margin: "6px 0" }}>
+              <input type="checkbox" checked={useDefault} onChange={(e) => setUseDefault(e.target.checked)} />
+              소속 파트너사의 도메인을 그대로 사용
+            </label>
+            <div className="table-wrap">
+              <table style={{ minWidth: 0, maxWidth: 520 }}>
+                <thead><tr><th style={{ width: 70 }}>사용</th><th>벤더 도메인</th><th>파트너사 기본</th></tr></thead>
+                <tbody>
+                  {(vendors.data ?? []).map((v) => {
+                    const on = useDefault ? partnerVendorIds.has(v.id) : domainIds.has(v.id);
+                    return (
+                      <tr key={v.id}>
+                        <td><input type="checkbox" checked={on} disabled={useDefault} onChange={() => toggleDomain(v.id)} aria-label={`${v.name} 도메인`} /></td>
+                        <td>{v.name}</td>
+                        <td className="muted">{partnerVendorIds.has(v.id) ? "포함" : "-"}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            {useDefault && <p className="muted">사용자별로 고르려면 위 체크를 끄세요.</p>}
+          </>
+        )}
+      </div>
       <div className="actions">
         <button className="primary" disabled={save.isPending} onClick={() => save.mutate()}>{pending ? "승인" : "변경 저장"}</button>
         <button onClick={onDone}>취소</button>
       </div>
-      {save.error && <p className="error" style={{ flexBasis: "100%" }}>{save.error.message}</p>}
+      {save.error && <p className="error">{save.error.message}</p>}
     </div>
   );
 }

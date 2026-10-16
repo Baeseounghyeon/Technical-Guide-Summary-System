@@ -8,12 +8,21 @@ from .conftest import ADMIN, login
 from .test_flow import _make_vendor_docx, _partner_with_vendor, _signup_and_approve
 
 
+def _grant(client, admin, user, scopes: list[str]) -> None:
+    """권한 승인 요청 → 관리자 승인으로 업무 밖 권한을 더한다."""
+    me = client.get("/api/auth/me", headers=user).json()
+    r = client.post("/api/permission-requests", json={"scopes": scopes, "reason": "테스트", "name": me["name"], "email": me["email"]}, headers=user)
+    assert r.status_code == 201, r.text
+    client.post(f"/api/admin/permission-requests/{r.json()['id']}/decision", json={"approve": True}, headers=admin)
+
+
 def test_documents_by_type_and_vendor(client, tmp_path: Path):
     admin = login(client, *ADMIN)
     partner, vendor = _partner_with_vendor(client, admin, "종류파트너", "TypeVendorA")
     _, vendor_b = _partner_with_vendor(client, admin, "종류파트너B", "TypeVendorB")
     client.put(f"/api/admin/partners/{partner['id']}/vendors", json={"vendor_ids": [vendor["id"], vendor_b["id"]]}, headers=admin)
     user = _signup_and_approve(client, admin, "types@t.example.com", partner["id"])
+    _grant(client, admin, user, ["spec"])  # 엔지니어는 기본으로 규격서를 올릴 수 없다
     src = tmp_path / "v.docx"
     _make_vendor_docx(src)
 
@@ -59,7 +68,7 @@ def test_guide_kinds(client, tmp_path: Path):
             assert client.post("/api/documents", data=data, files={"file": ("v.docx", f)}, headers=user).status_code == 201
     with src.open("rb") as f:
         spec = client.post(
-            "/api/documents", data={"vendor_id": vendor["id"], "doc_type": "spec", "guide_kind": "troubleshooting", "title": "규격"},
+            "/api/documents", data={"vendor_id": vendor["id"], "doc_type": "brochure", "guide_kind": "troubleshooting", "title": "브로슈어"},
             files={"file": ("v.docx", f)}, headers=user,
         ).json()
     assert spec["guide_kind"] is None  # 가이드가 아닌 문서에는 종류가 없다
@@ -164,3 +173,62 @@ def test_share_and_domain_access(client, tmp_path: Path):
 
     # 올린 사람은 직접 삭제할 수 있다
     assert client.delete(f"/api/documents/{doc['id']}", headers=owner).status_code == 204
+
+
+
+def test_track_permissions_and_admin_user_edit(client, tmp_path: Path):
+    """업무 구분별 권한(엔지니어/영업), 권한 승인 요청, 관리자의 가입자 정보·도메인 수정."""
+    admin = login(client, *ADMIN)
+    partner, vendor = _partner_with_vendor(client, admin, "권한파트너", "PermVendor")
+    _, other_vendor = _partner_with_vendor(client, admin, "권한다른파트너", "PermOtherVendor")
+    engineer = _signup_and_approve(client, admin, "perm-e@p.example.com", partner["id"])
+    r = client.post("/api/auth/signup", json={"email": "perm-s@p.example.com", "password": "sales-pass-1", "name": "영업", "company_name": "권한파트너", "track": "sales"})
+    client.post(f"/api/admin/users/{r.json()['id']}/approve", json={"partner_id": partner["id"], "role": "engineer"}, headers=admin)
+    sales = login(client, "perm-s@p.example.com", "sales-pass-1")
+    src = tmp_path / "v.docx"
+    _make_vendor_docx(src)
+
+    def upload(who, doc_type):
+        with src.open("rb") as f:
+            return client.post("/api/documents", data={"vendor_id": vendor["id"], "doc_type": doc_type, "title": f"{doc_type} 문서"}, files={"file": ("v.docx", f)}, headers=who)
+
+    assert sorted(client.get("/api/auth/me", headers=engineer).json()["permissions"]) == ["brochure", "guide"]
+    assert sorted(client.get("/api/auth/me", headers=sales).json()["permissions"]) == ["brochure", "quote", "spec"]
+    assert upload(engineer, "spec").status_code == 403 and upload(sales, "guide").status_code == 403
+    assert upload(sales, "brochure").status_code == 201
+    guide_doc = upload(engineer, "guide").json()
+    run_pending_jobs()
+    # 영업은 가이드를 내려받을 수는 있지만 요약은 못 한다
+    assert client.get(f"/api/documents/{guide_doc['id']}/download?format=original", headers=sales).status_code == 200
+    assert client.post(f"/api/documents/{guide_doc['id']}/guides", json={"target_language": "ko"}, headers=sales).status_code == 403
+
+    # 권한 승인 요청 → 승인되면 영업도 가이드 요약 가능, 반려(회수)하면 다시 막힘
+    me = client.get("/api/auth/me", headers=sales).json()
+    assert client.post("/api/permission-requests", json={"scopes": ["spec"], "reason": "x", "name": "a", "email": "a@a.a"}, headers=sales).status_code == 400
+    r = client.post("/api/permission-requests", json={"scopes": ["guide"], "reason": "기술 지원 겸업", "name": "영업 담당", "email": me["email"], "phone": "010-1"}, headers=sales)
+    assert r.status_code == 201 and r.json()["scope_labels"] == ["가이드 등록·요약"] and r.json()["name"] == "영업 담당"
+    assert client.post("/api/permission-requests", json={"scopes": ["guide"], "reason": "중복", "name": "a", "email": "a@a.a"}, headers=sales).status_code == 409
+    pending = client.get("/api/admin/permission-requests?status=pending", headers=admin).json()
+    assert [p["id"] for p in pending if p["user_id"] == me["id"]] == [r.json()["id"]]
+    client.post(f"/api/admin/permission-requests/{r.json()['id']}/decision", json={"approve": True, "note": "승인"}, headers=admin)
+    assert "guide" in client.get("/api/auth/me", headers=sales).json()["permissions"]
+    assert client.post(f"/api/documents/{guide_doc['id']}/guides", json={"target_language": "en"}, headers=sales).status_code == 201
+    client.post(f"/api/admin/permission-requests/{r.json()['id']}/decision", json={"approve": False, "note": "회수"}, headers=admin)
+    assert client.get("/api/permission-requests/mine", headers=sales).json()[0]["status"] == "revoked"
+    assert "guide" not in client.get("/api/auth/me", headers=sales).json()["permissions"]
+    run_pending_jobs()
+
+    # 관리자: 가입자 정보 수정 (이메일 중복 불가)
+    eng_id = client.get("/api/auth/me", headers=engineer).json()["id"]
+    r = client.put(f"/api/admin/users/{eng_id}/profile", json={"name": "새 이름", "company_name": "새 회사", "email": "Perm-E2@p.example.com", "phone": "010-9"}, headers=admin)
+    assert r.json()["name"] == "새 이름" and r.json()["email"] == "perm-e2@p.example.com"
+    assert client.put(f"/api/admin/users/{eng_id}/profile", json={"name": "x", "email": "perm-s@p.example.com"}, headers=admin).status_code == 409
+    assert login(client, "perm-e2@p.example.com", "engineer-pass-1")  # 바뀐 이메일로 로그인
+
+    # 관리자: 사용자별 도메인 지정 → 파트너사 기본 대신 지정한 것만
+    r = client.put(f"/api/admin/users/{eng_id}/domains", json={"vendor_ids": [other_vendor["id"]]}, headers=admin)
+    assert r.json() == {"custom_domains": True, "domains": ["PermOtherVendor"]}
+    row = next(u for u in client.get("/api/admin/users", headers=admin).json() if u["id"] == eng_id)
+    assert row["custom_domains"] and row["domains"] == ["PermOtherVendor"]
+    r = client.put(f"/api/admin/users/{eng_id}/domains", json={"use_partner_default": True}, headers=admin)
+    assert r.json() == {"custom_domains": False, "domains": ["PermVendor"]}

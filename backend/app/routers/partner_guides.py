@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..deps import get_active_user, get_guide_for_user
+from ..deps import needs, get_active_user, get_guide_for_user
 from ..models import (
     CorrectionExport,
     CorrectionLog,
@@ -46,7 +46,7 @@ router = APIRouter(prefix="/api", tags=["파트너 가이드 비교"])
 DOCX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
 
-@router.post("/guides/{guide_id}/partner-guides", response_model=PartnerGuideOut, status_code=status.HTTP_201_CREATED)
+@router.post("/guides/{guide_id}/partner-guides", response_model=PartnerGuideOut, status_code=status.HTTP_201_CREATED, dependencies=[Depends(needs("guide"))])
 def upload_partner_guide(
     guide_id: int,
     file: UploadFile | None = File(None),
@@ -116,7 +116,7 @@ def get_partner_guide(pg_id: int, user: User = Depends(get_active_user), db: Ses
     )
 
 
-@router.patch("/partner-sections/{section_id}", response_model=PartnerSectionOut)
+@router.patch("/partner-sections/{section_id}", response_model=PartnerSectionOut, dependencies=[Depends(needs("guide"))])
 def update_match(
     section_id: int, body: MatchPatch, user: User = Depends(get_active_user), db: Session = Depends(get_db)
 ) -> PartnerSectionOut:
@@ -135,7 +135,7 @@ def update_match(
     return _section_out(section)
 
 
-@router.post("/partner-guides/{pg_id}/compare", response_model=PartnerGuideOut)
+@router.post("/partner-guides/{pg_id}/compare", response_model=PartnerGuideOut, dependencies=[Depends(needs("guide"))])
 def start_compare(pg_id: int, user: User = Depends(get_active_user), db: Session = Depends(get_db)) -> PartnerGuide:
     pg = _partner_guide(db, user, pg_id)
     if pg.status not in (PartnerGuideStatus.MATCHED, PartnerGuideStatus.REVIEWING):
@@ -152,7 +152,7 @@ def start_compare(pg_id: int, user: User = Depends(get_active_user), db: Session
     return pg
 
 
-@router.post("/findings/{finding_id}/decision", response_model=FindingOut)
+@router.post("/findings/{finding_id}/decision", response_model=FindingOut, dependencies=[Depends(needs("guide"))])
 def decide(finding_id: int, body: DecisionIn, user: User = Depends(get_active_user), db: Session = Depends(get_db)) -> FindingOut:
     finding = db.get(Finding, finding_id)
     if finding is None:
@@ -217,7 +217,7 @@ def history(pg_id: int, user: User = Depends(get_active_user), db: Session = Dep
     ]
 
 
-@router.post("/partner-guides/{pg_id}/exports", response_model=CorrectionExportOut, status_code=status.HTTP_201_CREATED)
+@router.post("/partner-guides/{pg_id}/exports", response_model=CorrectionExportOut, status_code=status.HTTP_201_CREATED, dependencies=[Depends(needs("guide"))])
 def create_correction_export(
     pg_id: int, body: CorrectionExportCreate, user: User = Depends(get_active_user), db: Session = Depends(get_db)
 ) -> CorrectionExport:

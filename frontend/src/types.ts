@@ -25,12 +25,17 @@ export interface User {
 export interface AdminUser extends User {
   partner_name: string | null;
   domains: string[];
+  domain_ids: number[];
+  custom_domains: boolean;
+  permissions: string[];
   read_grants: { vendor_name: string; expires_at: string }[];
 }
 
 export interface Me extends User {
   partner_name: string | null;
   vendors: Vendor[];
+  /** guide | spec | quote | brochure: 등록·수정할 수 있는 것 (업무 구분 기본 + 승인된 추가 권한) */
+  permissions: string[];
 }
 
 export interface Partner {

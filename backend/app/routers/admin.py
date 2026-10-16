@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..db import get_db
-from ..deps import as_utc, require_platform_admin
+from ..deps import accessible_vendors, as_utc, require_platform_admin, user_permissions
 from ..models import AccessGrant, GrantStatus, Partner, Role, UsageRecord, User, UserStatus, Vendor, utcnow
 from ..schemas import (
     AdminUserOut,
@@ -37,16 +37,21 @@ def list_users(
         query = query.where(User.status == status_filter)
     else:
         query = query.where(User.status != UserStatus.DELETED)
-    all_vendors = sorted(v.name for v in db.scalars(select(Vendor)))
-    return [
-        AdminUserOut(
-            **UserOut.model_validate(u).model_dump(),
-            partner_name=u.partner.name if u.partner else None,
-            domains=all_vendors if u.role == Role.PLATFORM_ADMIN else sorted(v.name for v in (u.partner.vendors if u.partner else [])),
-            read_grants=_active_read_grants(db, u),
+    rows = []
+    for u in db.scalars(query):
+        vendors = accessible_vendors(db, u)
+        rows.append(
+            AdminUserOut(
+                **UserOut.model_validate(u).model_dump(),
+                partner_name=u.partner.name if u.partner else None,
+                domains=[v.name for v in vendors],
+                domain_ids=[v.id for v in vendors],
+                custom_domains=bool(u.custom_domains),
+                permissions=sorted(user_permissions(db, u)),
+                read_grants=_active_read_grants(db, u),
+            )
         )
-        for u in db.scalars(query)
-    ]
+    return rows
 
 
 def _active_read_grants(db: Session, user: User) -> list[ReadGrantBrief]:
@@ -208,3 +213,56 @@ def set_partner_quota(partner_id: int, body: QuotaIn, db: Session = Depends(get_
     partner.monthly_page_quota = body.monthly_page_quota
     db.commit()
     return {"id": partner.id, "quota_pages": partner_quota(partner), "custom_quota": partner.monthly_page_quota is not None}
+
+
+
+# ---------- 가입자 정보 수정 · 사용자별 도메인 ----------
+
+
+class ProfileIn(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    company_name: str | None = Field(None, max_length=200)
+    email: str = Field(min_length=3, max_length=255)
+    phone: str | None = Field(None, max_length=50)
+    department: str | None = Field(None, max_length=100)
+
+
+class DomainsIn(BaseModel):
+    use_partner_default: bool = False  # 참이면 사용자별 지정을 지우고 소속 파트너사의 도메인을 따른다
+    vendor_ids: list[int] = []
+
+
+@router.put("/users/{user_id}/profile", response_model=UserOut)
+def update_profile(user_id: int, body: ProfileIn, db: Session = Depends(get_db)) -> User:
+    """가입자 성명·회사명·이메일·전화번호·부서를 고친다 (이메일은 다른 계정과 겹치면 안 됨)."""
+    user = _get_or_404(db, User, user_id)
+    email = body.email.strip().lower()
+    if "@" not in email:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "이메일 형식이 올바르지 않습니다.")
+    if db.scalar(select(User).where(User.email == email, User.id != user.id)):
+        raise HTTPException(status.HTTP_409_CONFLICT, "다른 계정이 쓰고 있는 이메일입니다.")
+    clean = lambda v: (v or "").strip() or None  # noqa: E731
+    user.name = body.name.strip()
+    user.email = email
+    user.company_name = clean(body.company_name)
+    user.phone = clean(body.phone)
+    user.department = clean(body.department)
+    db.commit()
+    return user
+
+
+@router.put("/users/{user_id}/domains")
+def update_user_domains(user_id: int, body: DomainsIn, db: Session = Depends(get_db)) -> dict:
+    """사용자별 벤더 도메인 지정. 지정하면 소속 파트너사의 도메인 대신 이 목록만 쓴다."""
+    user = _get_or_404(db, User, user_id)
+    if body.use_partner_default:
+        user.custom_domains = False
+        user.vendors = []
+    else:
+        vendors = list(db.scalars(select(Vendor).where(Vendor.id.in_(body.vendor_ids)))) if body.vendor_ids else []
+        if len(vendors) != len(set(body.vendor_ids)):
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "없는 벤더 도메인이 포함되어 있습니다.")
+        user.custom_domains = True
+        user.vendors = vendors
+    db.commit()
+    return {"custom_domains": bool(user.custom_domains), "domains": [v.name for v in accessible_vendors(db, user)]}
