@@ -109,6 +109,23 @@ ANTHROPIC_API_KEY=발급받은-키
 
 모델은 `claude-opus-5-5`, 요약 깊이는 `CLAUDE_EFFORT`(기본 `medium`)로 조절합니다.
 
+## DB: Supabase(PostgreSQL)
+
+기본은 SQLite(`backend/data/app.db`)이고, `backend/.env`에 `DATABASE_URL`을 넣으면 PostgreSQL을 씁니다. 지금은 Supabase(서울 리전)에 연결되어 있습니다.
+
+1. Supabase 대시보드 → 프로젝트 → **Connect** → **Direct** → **Shared pooler** 주소를 복사합니다.
+2. `backend/.env`에 `DATABASE_URL=postgresql+psycopg://postgres.프로젝트ID:비밀번호@...pooler.supabase.com:5432/postgres` 형식으로 넣습니다.
+   맨 앞을 `postgresql+psycopg://`로 바꾸고, 비밀번호의 특수문자는 퍼센트 인코딩합니다(`@`→`%40`, `#`→`%23`, `%`→`%25`).
+3. 서버를 시작하면 테이블이 자동으로 생기고, Supabase 공개 API로 테이블이 노출되지 않도록 모든 테이블에 RLS가 켜집니다.
+
+기존 SQLite 데이터를 비어 있는 PostgreSQL로 옮길 때(대상에 데이터가 있으면 멈춤):
+
+```bash
+cd backend; .\.venv\Scripts\python -m app.migrate_to_postgres
+```
+
+업로드·생성 파일은 DB가 아니라 `backend/storage` 폴더에 그대로 있습니다. SQLite로 돌아가려면 `.env`의 `DATABASE_URL` 줄을 지우면 됩니다(옮긴 뒤 바뀐 데이터는 SQLite에 없음).
+
 ## 운영 시 Worker 분리
 
 `.env`에서 `EMBEDDED_WORKER=false`로 바꾸고 Worker를 별도 프로세스로 실행합니다.
@@ -120,4 +137,4 @@ cd backend; .\.venv\Scripts\python -m app.worker
 ## 알아둘 점
 
 - 이 폴더는 OneDrive 동기화 폴더 안에 있습니다. `node_modules`, `.venv`, SQLite DB가 계속 동기화되어 느려지거나 DB 잠금이 생길 수 있으니, `C:\dev` 같은 동기화 밖 경로로 옮기는 것을 권장합니다.
-- DB 스키마는 아직 마이그레이션 도구(Alembic) 없이 시작 시 자동 생성됩니다. 모델을 바꾸면 개발용 DB(`backend/data/app.db`)를 지우고 다시 시작하세요.
+- DB 스키마는 아직 마이그레이션 도구(Alembic) 없이 시작 시 자동 생성되고, 모델에 새로 생긴 nullable 컬럼만 자동으로 추가됩니다. 컬럼 형식 변경·삭제는 직접 처리해야 합니다.
