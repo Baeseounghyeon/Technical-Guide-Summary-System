@@ -71,3 +71,44 @@ def test_guide_kinds(client, tmp_path: Path):
     assert titles("") == ["기본값", "설치 가이드", "장애 대응"]
     assert titles("&guide_kind=technical") == ["기본값", "설치 가이드"]
     assert titles("&guide_kind=troubleshooting") == ["장애 대응"]
+
+
+def test_download_formats_delete_and_filters(client, tmp_path: Path):
+    """원본·Word·PPT·Excel·PDF 내려받기, 파트너·작성자 필터, 관리자 삭제."""
+    import io
+
+    import pymupdf
+    from docx import Document
+    from openpyxl import load_workbook
+
+    admin = login(client, *ADMIN)
+    partner, vendor = _partner_with_vendor(client, admin, "다운로드파트너", "DownloadVendor")
+    user = _signup_and_approve(client, admin, "dl@d.example.com", partner["id"])
+    src = tmp_path / "v.docx"
+    _make_vendor_docx(src)
+    with src.open("rb") as f:
+        doc = client.post("/api/documents", data={"vendor_id": vendor["id"], "title": "다운로드 가이드"}, files={"file": ("v.docx", f)}, headers=user).json()
+    run_pending_jobs()
+    base = f"/api/documents/{doc['id']}/download"
+
+    assert client.get(f"{base}?format=original", headers=user).content == src.read_bytes()
+    word = Document(io.BytesIO(client.get(f"{base}?format=docx", headers=user).content))
+    assert "Install steps" in "\n".join(p.text for p in word.paragraphs)
+    assert client.get(f"{base}?format=pptx", headers=user).content[:2] == b"PK"
+    sheet = load_workbook(io.BytesIO(client.get(f"{base}?format=xlsx", headers=user).content)).active
+    assert sheet["C1"].value == "목차" and any(r[2] == "Install steps" for r in sheet.iter_rows(values_only=True))
+    r = client.get(f"{base}?format=pdf", headers=user)
+    assert "attachment" in r.headers["content-disposition"]
+    assert "Install steps" in "".join(p.get_text() for p in pymupdf.open("pdf", r.content))
+    assert client.get(f"{base}?format=exe", headers=user).status_code == 422
+
+    # 파트너·작성자 필터
+    me_id = client.get("/api/auth/me", headers=user).json()["id"]
+    listed = client.get(f"/api/documents?doc_type=guide&partner_id={partner['id']}&uploaded_by={me_id}", headers=admin).json()
+    assert [d["id"] for d in listed] == [doc["id"]] and listed[0]["partner_name"] == "다운로드파트너"
+    assert client.get(f"/api/documents?uploaded_by={me_id + 999}", headers=admin).json() == []
+
+    # 삭제는 플랫폼 관리자만
+    assert client.delete(f"/api/documents/{doc['id']}", headers=user).status_code == 403
+    assert client.delete(f"/api/documents/{doc['id']}", headers=admin).status_code == 204
+    assert client.get(f"/api/documents/{doc['id']}", headers=admin).status_code == 404

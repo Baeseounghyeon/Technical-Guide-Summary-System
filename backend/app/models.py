@@ -197,6 +197,7 @@ class SourceDocument(Base):
 
     vendor: Mapped[Vendor] = relationship()
     uploader: Mapped["User"] = relationship(foreign_keys=[uploaded_by])
+    partner: Mapped[Partner | None] = relationship()
     sections: Mapped[list["Section"]] = relationship(
         back_populates="document", order_by="Section.order_index", cascade="all, delete-orphan"
     )
@@ -637,3 +638,20 @@ class QuoteFile(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     vendor: Mapped[Vendor | None] = relationship()
+
+
+class CalendarEvent(Base):
+    """홈 달력의 개인 일정. 여러 날에 걸치면 start_date~end_date 로 이어서 표시한다."""
+
+    __tablename__ = "calendar_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    title: Mapped[str] = mapped_column(String(200))
+    purpose: Mapped[str] = mapped_column(String(20))  # meeting | outside | vacation | education | other
+    start_date: Mapped[str] = mapped_column(String(10), index=True)  # YYYY-MM-DD
+    end_date: Mapped[str] = mapped_column(String(10), index=True)
+    start_time: Mapped[str | None] = mapped_column(String(5))  # HH:MM (첫날 시작)
+    end_time: Mapped[str | None] = mapped_column(String(5))  # HH:MM (마지막 날 끝)
+    content: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

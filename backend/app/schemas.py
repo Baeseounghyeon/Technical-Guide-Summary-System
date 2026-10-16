@@ -157,6 +157,9 @@ class DocumentOut(ORM):
     doc_type: str
     guide_kind: str | None  # 기술 가이드 문서만: technical | troubleshooting
     description: str | None
+    partner_id: int | None
+    partner_name: str | None
+    uploaded_by: int
     uploaded_by_name: str | None
     source_type: str
     url: str | None

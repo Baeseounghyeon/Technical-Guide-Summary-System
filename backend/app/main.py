@@ -12,6 +12,7 @@ from .models import Role, User, UserStatus
 from .routers import (
     admin,
     auth,
+    calendar,
     community,
     dashboard,
     documents,
@@ -102,7 +103,7 @@ app.add_middleware(
 
 for module in (
     auth, admin, vendors, partners, documents, guides, exports, partner_guides,
-    community, dashboard, sharing, uploads, jobs, usage, quotes,
+    community, dashboard, sharing, uploads, jobs, usage, quotes, calendar,
 ):
     app.include_router(module.router)
 

@@ -1,17 +1,28 @@
+import re
+import tempfile
 from pathlib import Path
-
 from typing import Literal
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
-from sqlalchemy import or_, select
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi.responses import Response
+from sqlalchemy import delete, or_, select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..deps import accessible_vendors, ensure_vendor_access, get_active_user, get_document_for_user, is_admin
-from ..models import DocType, GuideKind, JobKind, Section, SourceDocument, User
+from ..deps import (
+    accessible_vendors,
+    ensure_vendor_access,
+    get_active_user,
+    get_document_for_user,
+    is_admin,
+    require_platform_admin,
+)
+from ..models import DocStatus, DocType, GuideKind, JobKind, Section, SourceDocument, User
 from ..schemas import DocumentDetail, DocumentOut, GuideBrief, SectionOut, SectionPatch
 from ..services.jobs import enqueue
+from ..services.exporters.document_export import MEDIA_TYPES, build_document_file, doc_info
 from ..services.parsing import SUPPORTED_EXTENSIONS
+from ..services.storage import get_storage
 from .uploads import store_upload
 
 router = APIRouter(prefix="/api", tags=["원본 문서"])
@@ -74,6 +85,8 @@ def list_documents(
     vendor_id: int | None = None,
     doc_type: Literal["spec", "guide", "brochure"] | None = None,
     guide_kind: Literal["technical", "troubleshooting"] | None = None,
+    partner_id: int | None = None,
+    uploaded_by: int | None = None,
     user: User = Depends(get_active_user),
     db: Session = Depends(get_db),
 ) -> list[DocumentOut]:
@@ -88,6 +101,10 @@ def list_documents(
         query = query.where(or_(SourceDocument.doc_type == DocType.GUIDE, SourceDocument.doc_type.is_(None)))
     elif doc_type is not None:
         query = query.where(SourceDocument.doc_type == doc_type)
+    if partner_id is not None:
+        query = query.where(SourceDocument.partner_id == partner_id)
+    if uploaded_by is not None:
+        query = query.where(SourceDocument.uploaded_by == uploaded_by)
     if guide_kind == GuideKind.TECHNICAL:
         query = query.where(or_(SourceDocument.guide_kind == GuideKind.TECHNICAL, SourceDocument.guide_kind.is_(None)))
     elif guide_kind is not None:
@@ -130,6 +147,9 @@ def _document_out(doc: SourceDocument) -> DocumentOut:
         doc_type=doc.doc_type or DocType.GUIDE,
         guide_kind=(doc.guide_kind or GuideKind.TECHNICAL) if (doc.doc_type or DocType.GUIDE) == DocType.GUIDE else None,
         description=doc.description,
+        partner_id=doc.partner_id,
+        partner_name=doc.partner.name if doc.partner else None,
+        uploaded_by=doc.uploaded_by,
         uploaded_by_name=doc.uploader.name if doc.uploader else None,
         source_type=doc.source_type,
         url=doc.url,
@@ -152,3 +172,45 @@ def _section_out(s: Section) -> SectionOut:
         included=s.included,
         char_count=len(s.text),
     )
+
+
+DOC_TYPE_LABELS = {"spec": "벤더 규격서", "guide": "벤더 기술 가이드", "brochure": "벤더 브로슈어"}
+DownloadFormat = Literal["original", "docx", "pptx", "xlsx", "pdf"]
+_UNSAFE_NAME = re.compile(r'[\\/:*?"<>|]')  # 파일 이름에 쓸 수 없는 문자
+
+
+@router.get("/documents/{document_id}/download")
+def download_document(
+    document_id: int,
+    format: DownloadFormat = Query("original"),
+    user: User = Depends(get_active_user),
+    db: Session = Depends(get_db),
+) -> Response:
+    """원본 파일 그대로, 또는 분석한 목차별 본문으로 Word·PowerPoint·Excel·PDF 를 만들어 내려받는다."""
+    doc = get_document_for_user(db, user, document_id)
+    storage = get_storage()
+    base = _UNSAFE_NAME.sub("_", doc.title or f"document{doc.id}")[:120]
+    original_ext = Path(doc.file_path).suffix.lower() if doc.file_path else ""
+    # PDF 원본에 PDF 를 고르면 원본을 그대로 준다 (서식이 그대로 남음).
+    if format == "original" or (format == "pdf" and original_ext == ".pdf"):
+        if not doc.file_path:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "웹 주소로 등록한 문서는 원본 파일이 없습니다. 다른 형식을 고르세요.")
+        return storage.response(doc.file_path, f"{base}{original_ext}", "application/octet-stream")
+    if doc.status != DocStatus.PARSED:
+        raise HTTPException(status.HTTP_409_CONFLICT, "문서 분석이 끝난 뒤에 다른 형식으로 받을 수 있습니다.")
+    info = doc_info(doc, DOC_TYPE_LABELS.get(doc.doc_type or "guide", "문서"))
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / f"doc{doc.id}.{format}"
+        build_document_file(info, format, out)
+        ref = storage.save(f"downloads/doc{doc.id}_{format}.{format}", out.read_bytes())
+    return storage.response(ref, f"{base}.{format}", MEDIA_TYPES[format])
+
+
+@router.delete("/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_document(document_id: int, _admin: User = Depends(require_platform_admin), db: Session = Depends(get_db)) -> None:
+    """플랫폼 관리자 전용: 문서와 그 목차·요약 가이드·생성 문서 기록을 함께 지운다 (저장소 파일은 남긴다)."""
+    if db.get(SourceDocument, document_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "문서를 찾을 수 없습니다.")
+    # 하위 기록(목차·가이드·요약·생성 문서·파트너 비교 등)은 DB 의 ON DELETE CASCADE 로 함께 지워진다.
+    db.execute(delete(SourceDocument).where(SourceDocument.id == document_id))
+    db.commit()
