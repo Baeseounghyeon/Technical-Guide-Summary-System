@@ -316,3 +316,7 @@ details summary { cursor: pointer; color: var(--accent); font-weight: 600; margi
   .band-inner { padding: 0 16px; }
   .card { padding: 18px 16px; }
 }
+
+/* 상단 '문서' 메뉴 펼침 목록 (body 에 띄움) */
+.nav-dropdown { position: fixed; right: auto; transform: translateX(-50%); min-width: 160px; z-index: 60; }
+.dropdown-item.active { color: var(--accent); font-weight: 700; }

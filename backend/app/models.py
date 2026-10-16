@@ -161,6 +161,14 @@ class User(Base):
     partner: Mapped[Partner | None] = relationship()
 
 
+class DocType(StrEnum):
+    """문서 종류(목적). 비어 있으면 기술 가이드로 본다."""
+
+    SPEC = "spec"  # 벤더 규격서
+    GUIDE = "guide"  # 벤더 기술 가이드
+    BROCHURE = "brochure"  # 벤더 브로슈어
+
+
 class SourceDocument(Base):
     __tablename__ = "source_documents"
 
@@ -169,6 +177,8 @@ class SourceDocument(Base):
     partner_id: Mapped[int | None] = mapped_column(ForeignKey("partners.id"), index=True)
     uploaded_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
     title: Mapped[str | None] = mapped_column(String(500))
+    doc_type: Mapped[str | None] = mapped_column(String(20), default=DocType.GUIDE)  # spec | guide | brochure
+    description: Mapped[str | None] = mapped_column(Text)
     source_type: Mapped[str] = mapped_column(String(10))  # pdf | docx | pptx | url
     file_path: Mapped[str | None] = mapped_column(String(500))
     url: Mapped[str | None] = mapped_column(String(2000))
@@ -178,6 +188,7 @@ class SourceDocument(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     vendor: Mapped[Vendor] = relationship()
+    uploader: Mapped["User"] = relationship(foreign_keys=[uploaded_by])
     sections: Mapped[list["Section"]] = relationship(
         back_populates="document", order_by="Section.order_index", cascade="all, delete-orphan"
     )

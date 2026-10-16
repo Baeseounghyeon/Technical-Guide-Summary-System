@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import logoUrl from "./assets/unipoint-logo.png";
 import { useAuth } from "./auth";
-import { ROLE_LABELS, TRACK_LABELS } from "./labels";
+import { DOC_TYPES, ROLE_LABELS, TRACK_LABELS } from "./labels";
 import AdminPage from "./pages/AdminPage";
 import CommunityPage from "./pages/CommunityPage";
 import DashboardPage from "./pages/DashboardPage";
@@ -49,7 +50,7 @@ function Protected({ children, roles, sales }: { children: ReactNode; roles?: Ro
   if (loading) return <p className="page">불러오는 중…</p>;
   if (!me) return <Navigate to="/login" replace />;
   if (roles && !roles.includes(me.role)) return <Navigate to="/" replace />;
-  // 업무 구분: 영업은 '가이드 공유' 대신 '견적서', 엔지니어는 그 반대. 플랫폼 관리자는 둘 다 본다.
+  // 업무 구분: 영업은 '가이드 공유' 대신 '견적서'. 플랫폼 관리자는 견적서도 본다(영업 마스터는 가이드 공유 없이).
   const isAdmin = me.role === "platform_admin";
   const isSales = me.track === "sales";
   if (sales && !isSales && !isAdmin) return <Navigate to="/" replace />;
@@ -62,8 +63,8 @@ function Protected({ children, roles, sales }: { children: ReactNode; roles?: Ro
         </Link>
         <nav>
           <NavLink to="/" end>홈</NavLink>
-          <NavLink to="/documents">문서</NavLink>
-          {(!isSales || isAdmin) && <NavLink to="/shared">가이드 공유</NavLink>}
+          <DocsMenu />
+          {!isSales && <NavLink to="/shared">가이드 공유</NavLink>}
           {(isSales || isAdmin) && <NavLink to="/quotes">견적서</NavLink>}
           <NavLink to="/community">커뮤니티</NavLink>
           {SETTINGS_ROLES.includes(me.role) && (!isSales || isAdmin) && <NavLink to="/settings">설정</NavLink>}
@@ -76,6 +77,60 @@ function Protected({ children, roles, sales }: { children: ReactNode; roles?: Ro
       </header>
       <main className="page">{children}</main>
       <HashScroll />
+    </>
+  );
+}
+
+/** 상단 '문서' 메뉴: 마우스를 올리면 규격서·기술 가이드·브로슈어가 펼쳐진다 (누르면 문서 화면).
+ *  메뉴 줄이 가로 스크롤 영역이라 잘리지 않도록 펼침 목록은 body 에 띄운다. */
+function DocsMenu() {
+  const navigate = useNavigate();
+  const { pathname, search } = useLocation();
+  const linkRef = useRef<HTMLAnchorElement>(null);
+  const timer = useRef<number | undefined>(undefined);
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+
+  const show = () => {
+    window.clearTimeout(timer.current);
+    const r = linkRef.current?.getBoundingClientRect();
+    if (r) setPos({ left: r.left + r.width / 2, top: r.bottom });
+  };
+  // 링크에서 목록으로 마우스를 옮기는 동안 닫히지 않게 잠깐 기다린다.
+  const hide = () => {
+    timer.current = window.setTimeout(() => setPos(null), 150);
+  };
+  useEffect(() => setPos(null), [pathname, search]);
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+  const currentType = pathname === "/documents" ? (new URLSearchParams(search).get("type") ?? "guide") : null;
+
+  return (
+    <>
+      <NavLink ref={linkRef} to="/documents" onMouseEnter={show} onMouseLeave={hide} onFocus={show} onBlur={hide} aria-haspopup="menu">
+        문서
+      </NavLink>
+      {pos &&
+        createPortal(
+          <div
+            className="dropdown nav-dropdown"
+            role="menu"
+            style={{ left: pos.left, top: pos.top }}
+            onMouseEnter={show}
+            onMouseLeave={hide}
+          >
+            {DOC_TYPES.map((t) => (
+              <button
+                key={t.key}
+                className={`dropdown-item${currentType === t.key ? " active" : ""}`}
+                role="menuitem"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => navigate(`/documents?type=${t.key}`)}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>,
+          document.body,
+        )}
     </>
   );
 }
@@ -126,7 +181,7 @@ function UserMenu() {
   const canManageLogo = SETTINGS_ROLES.includes(me.role);
   // 이름이 권한 이름과 같으면(예: 관리자 계정 이름 "플랫폼 관리자") 한 번만 보여 준다.
   const roleLabel = ROLE_LABELS[me.role] === me.name ? null : ROLE_LABELS[me.role];
-  const trackLabel = me.role === "platform_admin" ? null : TRACK_LABELS[me.track ?? "engineer"];
+  const trackLabel = me.role === "platform_admin" && me.track !== "sales" ? null : TRACK_LABELS[me.track ?? "engineer"];
   const subtitle = [trackLabel, roleLabel, me.partner_name].filter(Boolean).join(" · ");
   const isSales = me.track === "sales" && me.role !== "platform_admin";
 

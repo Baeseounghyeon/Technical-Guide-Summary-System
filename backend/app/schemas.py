@@ -154,6 +154,9 @@ class DocumentOut(ORM):
     vendor_id: int
     vendor_name: str
     title: str | None
+    doc_type: str
+    description: str | None
+    uploaded_by_name: str | None
     source_type: str
     url: str | None
     page_count: int | None

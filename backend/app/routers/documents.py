@@ -1,12 +1,14 @@
 from pathlib import Path
 
+from typing import Literal
+
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..deps import accessible_vendors, ensure_vendor_access, get_active_user, get_document_for_user, is_admin
-from ..models import JobKind, Section, SourceDocument, User
+from ..models import DocType, JobKind, Section, SourceDocument, User
 from ..schemas import DocumentDetail, DocumentOut, GuideBrief, SectionOut, SectionPatch
 from ..services.jobs import enqueue
 from ..services.parsing import SUPPORTED_EXTENSIONS
@@ -19,6 +21,8 @@ router = APIRouter(prefix="/api", tags=["원본 문서"])
 def create_document(
     vendor_id: int = Form(...),
     title: str | None = Form(None),
+    doc_type: Literal["spec", "guide", "brochure"] = Form("guide"),
+    description: str | None = Form(None),
     url: str | None = Form(None),
     file: UploadFile | None = File(None),
     storage_key: str | None = Form(None),
@@ -32,7 +36,14 @@ def create_document(
     if has_file == bool(url):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "파일 또는 URL 중 하나만 입력하세요.")
 
-    doc = SourceDocument(vendor_id=vendor_id, partner_id=user.partner_id, uploaded_by=user.id, title=title or None)
+    doc = SourceDocument(
+        vendor_id=vendor_id,
+        partner_id=user.partner_id,
+        uploaded_by=user.id,
+        title=title or None,
+        doc_type=doc_type,
+        description=(description or "").strip() or None,
+    )
     if has_file:
         ext = Path(file.filename or "" if file is not None else storage_key).suffix.lower()
         if ext not in SUPPORTED_EXTENSIONS:
@@ -58,7 +69,10 @@ def create_document(
 
 @router.get("/documents", response_model=list[DocumentOut])
 def list_documents(
-    vendor_id: int | None = None, user: User = Depends(get_active_user), db: Session = Depends(get_db)
+    vendor_id: int | None = None,
+    doc_type: Literal["spec", "guide", "brochure"] | None = None,
+    user: User = Depends(get_active_user),
+    db: Session = Depends(get_db),
 ) -> list[DocumentOut]:
     query = select(SourceDocument).order_by(SourceDocument.created_at.desc())
     if not is_admin(user):
@@ -66,6 +80,11 @@ def list_documents(
         query = query.where(SourceDocument.partner_id == user.partner_id, SourceDocument.vendor_id.in_(vendor_ids))
     if vendor_id is not None:
         query = query.where(SourceDocument.vendor_id == vendor_id)
+    if doc_type == DocType.GUIDE:
+        # 종류가 생기기 전에 올린 문서는 기술 가이드로 본다
+        query = query.where(or_(SourceDocument.doc_type == DocType.GUIDE, SourceDocument.doc_type.is_(None)))
+    elif doc_type is not None:
+        query = query.where(SourceDocument.doc_type == doc_type)
     return [_document_out(d) for d in db.scalars(query)]
 
 
@@ -101,6 +120,9 @@ def _document_out(doc: SourceDocument) -> DocumentOut:
         vendor_id=doc.vendor_id,
         vendor_name=doc.vendor.name,
         title=doc.title,
+        doc_type=doc.doc_type or DocType.GUIDE,
+        description=doc.description,
+        uploaded_by_name=doc.uploader.name if doc.uploader else None,
         source_type=doc.source_type,
         url=doc.url,
         page_count=doc.page_count,
