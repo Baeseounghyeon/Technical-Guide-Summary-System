@@ -117,11 +117,24 @@ def test_download_formats_delete_and_filters(client, tmp_path: Path):
     assert [d["id"] for d in listed] == [doc["id"]] and listed[0]["partner_name"] == "다운로드파트너"
     assert client.get(f"/api/documents?uploaded_by={me_id + 999}", headers=admin).json() == []
 
-    # 삭제는 올린 사람 또는 플랫폼 관리자만 (같은 회사 동료는 불가)
+    # 삭제는 같은 조직 사람(또는 관리자) → 휴지통. 다른 조직은 불가
+    outsider_partner, _ = _partner_with_vendor(client, admin, "다운로드외부사", "DownloadOtherVendor")
+    outsider = _signup_and_approve(client, admin, "dl-out@d.example.com", outsider_partner["id"])
+    assert client.delete(f"/api/documents/{doc['id']}", headers=outsider).status_code == 404
     coworker = _signup_and_approve(client, admin, "dl2@d.example.com", partner["id"])
-    assert client.delete(f"/api/documents/{doc['id']}", headers=coworker).status_code == 403
-    assert client.delete(f"/api/documents/{doc['id']}", headers=admin).status_code == 204
-    assert client.get(f"/api/documents/{doc['id']}", headers=admin).status_code == 404
+    with src.open("rb") as f:  # 나중에 올린 문서 (복구 후 순서 확인용)
+        later = client.post("/api/documents", data={"vendor_id": vendor["id"], "title": "나중 문서"}, files={"file": ("v.docx", f)}, headers=user).json()
+    run_pending_jobs()
+    assert client.delete(f"/api/documents/{doc['id']}", headers=coworker).status_code == 204
+    assert client.get(f"/api/documents/{doc['id']}", headers=user).status_code == 404
+    trash = client.get("/api/trash", headers=user).json()
+    assert [t["id"] for t in trash] == [doc["id"]] and trash[0]["deleted_by_name"]
+    assert client.get("/api/trash", headers=outsider).json() == []
+    # 복구하면 삭제 전 그대로 (목록에서도 원래 자리: 나중 문서 다음)
+    assert client.post(f"/api/trash/{doc['id']}/restore", headers=user).status_code == 200
+    ids = [d["id"] for d in client.get(f"/api/documents?vendor_id={vendor['id']}", headers=user).json()]
+    assert ids == [later["id"], doc["id"]]
+    assert client.get("/api/trash", headers=user).json() == []
 
 
 
@@ -232,3 +245,39 @@ def test_track_permissions_and_admin_user_edit(client, tmp_path: Path):
     assert row["custom_domains"] and row["domains"] == ["PermOtherVendor"]
     r = client.put(f"/api/admin/users/{eng_id}/domains", json={"use_partner_default": True}, headers=admin)
     assert r.json() == {"custom_domains": False, "domains": ["PermVendor"]}
+
+
+
+def test_product_catalog_and_filter(client, tmp_path: Path):
+    """벤더 → 제품군 → 상세: 등록할 때 검사하고 목록에서 거른다."""
+    admin = login(client, *ADMIN)
+    vendor = client.post("/api/admin/vendors", json={"name": "Thales"}, headers=admin).json()
+    partner = client.post("/api/admin/partners", json={"name": "제품파트너"}, headers=admin).json()
+    client.put(f"/api/admin/partners/{partner['id']}/vendors", json={"vendor_ids": [vendor["id"]]}, headers=admin)
+    user = _signup_and_approve(client, admin, "product@p.example.com", partner["id"])
+    catalog = client.get("/api/catalog", headers=user).json()
+    assert catalog["Thales"]["CipherTrust Manager"] == ["k170v", "k470v", "k570"] and "V3" in catalog["Ahnlab"]
+    src = tmp_path / "v.docx"
+    _make_vendor_docx(src)
+
+    def upload(title, product=None, detail=None):
+        data = {"vendor_id": vendor["id"], "title": title, "doc_type": "brochure"}
+        if product:
+            data["product"] = product
+        if detail:
+            data["product_detail"] = detail
+        with src.open("rb") as f:
+            return client.post("/api/documents", data=data, files={"file": ("v.docx", f)}, headers=user)
+
+    assert upload("k570 브로슈어", "CipherTrust Manager", "k570").status_code == 201
+    assert upload("Luna 브로슈어", "Luna HSM").status_code == 201
+    assert upload("잘못된 제품", "V3").status_code == 400  # Ahnlab 제품
+    assert upload("잘못된 상세", "CipherTrust Manager", "k999").status_code == 400
+    run_pending_jobs()
+
+    def titles(q):
+        return sorted(d["title"] for d in client.get(f"/api/documents?doc_type=brochure&vendor_id={vendor['id']}{q}", headers=user).json())
+
+    assert titles("&product=CipherTrust%20Manager") == ["k570 브로슈어"]
+    assert titles("&product=CipherTrust%20Manager&product_detail=k470v") == []
+    assert titles("") == ["Luna 브로슈어", "k570 브로슈어"]

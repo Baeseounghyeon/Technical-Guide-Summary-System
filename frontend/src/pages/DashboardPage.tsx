@@ -14,7 +14,7 @@ export default function DashboardPage() {
 
   const c = data.data?.counts;
   const cards: { key: string; label: string; value?: number; tone: string; note?: string }[] = [
-    { key: "all", label: "처리한 문서", value: c?.total, tone: "accent" },
+    { key: "processed", label: "처리한 문서", value: c?.total, tone: "accent" },
     { key: "done", label: "처리 완료", value: c?.completed, tone: "ok", note: "요약 승인 완료" },
     { key: "progress", label: "처리 미완료", value: c?.in_progress, tone: "warn", note: c?.pending_reviews ? `검토 대기 항목 ${c.pending_reviews}개` : "분석·요약·검토 중" },
     { key: "failed", label: "실패", value: c?.failed, tone: "danger", note: "분석 실패" },
@@ -31,17 +31,17 @@ export default function DashboardPage() {
 
           <div className="stat-grid">
             {cards.map((card) => (
-              <div key={card.key} className={`stat-card tone-${card.tone}`}>
+              <Link key={card.key} to={`/home/${card.key}`} className={`stat-card tone-${card.tone}`}>
                 <span className="stat-label">{card.label}</span>
                 <span className="stat-value">{card.value ?? "–"}</span>
                 {card.note && <span className="stat-note">{card.note}</span>}
-              </div>
+              </Link>
             ))}
-            <div className="stat-card tone-plain">
+            <Link to="/home/exports" className="stat-card tone-plain">
               <span className="stat-label">생성한 최종 문서</span>
               <span className="stat-value">{c?.exports ?? "–"}</span>
               <span className="stat-note">Word · PowerPoint</span>
-            </div>
+            </Link>
           </div>
         </div>
       </section>

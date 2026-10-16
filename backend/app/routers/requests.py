@@ -71,7 +71,7 @@ def _sorted(guides) -> list[Guide]:
 @router.get("/my-requests", response_model=list[RequestOut])
 def my_requests(user: User = Depends(get_active_user), db: Session = Depends(get_db)) -> list[RequestOut]:
     """내가 요약을 요청한 가이드."""
-    guides = _sorted(db.scalars(select(Guide).where(Guide.created_by == user.id)))
+    guides = _sorted(g for g in db.scalars(select(Guide).where(Guide.created_by == user.id)) if g.document.deleted_at is None)
     names = _names(db, guides)
     return [_out(g, names) for g in guides]
 
@@ -79,7 +79,7 @@ def my_requests(user: User = Depends(get_active_user), db: Session = Depends(get
 @router.get("/org-guides", response_model=list[RequestOut])
 def org_guides(user: User = Depends(get_active_user), db: Session = Depends(get_db)) -> list[RequestOut]:
     """같은 조직(파트너사)에서 요약을 요청한 가이드. 같은 조직이면 최종 문서를 내려받을 수 있다."""
-    query = select(Guide).join(SourceDocument, Guide.document_id == SourceDocument.id)
+    query = select(Guide).join(SourceDocument, Guide.document_id == SourceDocument.id).where(SourceDocument.deleted_at.is_(None))
     if not is_admin(user):
         vendor_ids = [v.id for v in accessible_vendors(db, user)]
         query = query.where(SourceDocument.partner_id == user.partner_id, SourceDocument.vendor_id.in_(vendor_ids))

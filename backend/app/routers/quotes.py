@@ -11,6 +11,7 @@ from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ..catalog import validate_product
 from ..db import get_db
 from ..deps import get_active_user, is_admin, require_permission
 from ..models import QuoteFile, User, Vendor
@@ -52,6 +53,8 @@ def list_files(partner_id: int | None = None, user: User = Depends(get_active_us
 def upload_file(
     category: Category = Form("other"),
     vendor_id: int | None = Form(None),
+    product: str | None = Form(None),
+    product_detail: str | None = Form(None),
     note: str | None = Form(None),
     partner_id: int | None = Form(None),
     file: UploadFile | None = File(None),
@@ -68,14 +71,22 @@ def upload_file(
     name = (file.filename if file is not None else filename) or storage_key or ""
     if Path(name).suffix.lower() not in ALLOWED:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"허용 형식: {', '.join(sorted(ALLOWED))}")
-    if vendor_id is not None and db.get(Vendor, vendor_id) is None:
+    vendor = db.get(Vendor, vendor_id) if vendor_id is not None else None
+    if vendor_id is not None and vendor is None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "벤더를 찾을 수 없습니다.")
+    product, product_detail = (product or "").strip() or None, (product_detail or "").strip() or None
+    if product and vendor is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "제품군을 고르려면 벤더를 먼저 고르세요.")
+    if vendor and (error := validate_product(vendor.name, product, product_detail)):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, error)
     ref, original = store_upload(f"quote-files/{pid}", file, storage_key, filename)
     f = QuoteFile(
         partner_id=pid,
         vendor_id=vendor_id,
         uploaded_by=user.id,
         category=category,
+        product=product,
+        product_detail=product_detail,
         filename=Path(original).name[:300],
         file_path=ref,
         note=(note or "").strip() or None,

@@ -199,6 +199,11 @@ class SourceDocument(Base):
     doc_type: Mapped[str | None] = mapped_column(String(20), default=DocType.GUIDE)  # spec | guide | brochure
     description: Mapped[str | None] = mapped_column(Text)
     guide_kind: Mapped[str | None] = mapped_column(String(20))  # doc_type=guide 일 때: technical | troubleshooting
+    product: Mapped[str | None] = mapped_column(String(100))  # 제품군 (catalog.PRODUCT_CATALOG)
+    product_detail: Mapped[str | None] = mapped_column(String(100))  # 제품군의 상세
+    # 휴지통: 삭제하면 표시만 하고(같은 조직이 복구 가능), 목록에서 뺀다
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    deleted_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
     source_type: Mapped[str] = mapped_column(String(10))  # pdf | docx | pptx | url
     file_path: Mapped[str | None] = mapped_column(String(500))
     url: Mapped[str | None] = mapped_column(String(2000))
@@ -209,6 +214,7 @@ class SourceDocument(Base):
 
     vendor: Mapped[Vendor] = relationship()
     uploader: Mapped["User"] = relationship(foreign_keys=[uploaded_by])
+    deleter: Mapped["User | None"] = relationship(foreign_keys=[deleted_by])
     partner: Mapped[Partner | None] = relationship()
     shares: Mapped[list["DocumentShare"]] = relationship(cascade="all, delete-orphan")
     sections: Mapped[list["Section"]] = relationship(
@@ -650,6 +656,8 @@ class QuoteFile(Base):
     vendor_id: Mapped[int | None] = mapped_column(ForeignKey("vendors.id", ondelete="SET NULL"))
     uploaded_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
     category: Mapped[str] = mapped_column(String(20))  # spec | feature | price | other
+    product: Mapped[str | None] = mapped_column(String(100))
+    product_detail: Mapped[str | None] = mapped_column(String(100))
     filename: Mapped[str] = mapped_column(String(300))
     file_path: Mapped[str] = mapped_column(String(500))
     note: Mapped[str | None] = mapped_column(Text)

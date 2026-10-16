@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, download, fetchBlob } from "../api";
 import { useAuth } from "../auth";
 import { QUOTE_CATEGORY_LABELS } from "../labels";
+import ProductSelect, { productLabel } from "../ProductSelect";
 import type { Partner, QuoteFile } from "../types";
 
 type Tab = "create" | "template" | "logo" | "files";
@@ -201,6 +202,9 @@ function FilesTab({ partnerId }: { partnerId: number }) {
   const [file, setFile] = useState<File | null>(null);
   const [category, setCategory] = useState("spec");
   const [vendorId, setVendorId] = useState<number | "">("");
+  const [product, setProduct] = useState({ product: "", detail: "" });
+  // 목록 거르기: 벤더 → 제품군 → 상세
+  const [view, setView] = useState({ vendor: "", product: "", detail: "" });
   const [note, setNote] = useState("");
 
   const upload = useMutation({
@@ -210,6 +214,8 @@ function FilesTab({ partnerId }: { partnerId: number }) {
       form.append("category", category);
       form.append("partner_id", String(partnerId));
       if (vendorId !== "") form.append("vendor_id", String(vendorId));
+      if (product.product) form.append("product", product.product);
+      if (product.detail) form.append("product_detail", product.detail);
       if (note.trim()) form.append("note", note.trim());
       return api<QuoteFile>("/quote-files", { method: "POST", body: form });
     },
@@ -220,6 +226,12 @@ function FilesTab({ partnerId }: { partnerId: number }) {
       if (inputRef.current) inputRef.current.value = "";
     },
   });
+  const shown = (files.data ?? []).filter(
+    (f) =>
+      (!view.vendor || String(f.vendor_id) === view.vendor) &&
+      (!view.product || f.product === view.product) &&
+      (!view.detail || f.product_detail === view.detail),
+  );
   const remove = useMutation({
     mutationFn: (id: number) => api(`/quote-files/${id}`, { method: "DELETE" }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: key }),
@@ -245,11 +257,23 @@ function FilesTab({ partnerId }: { partnerId: number }) {
           </label>
           <label style={{ flex: "0 0 200px" }}>
             벤더
-            <select value={vendorId} onChange={(e) => setVendorId(Number(e.target.value) || "")}>
+            <select
+              value={vendorId}
+              onChange={(e) => {
+                setVendorId(Number(e.target.value) || "");
+                setProduct({ product: "", detail: "" });
+              }}
+            >
               <option value="">(지정 안 함)</option>
               {vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
             </select>
           </label>
+          <ProductSelect
+            vendorName={vendors.find((v) => v.id === vendorId)?.name}
+            product={product.product}
+            detail={product.detail}
+            onChange={(p, d) => setProduct({ product: p, detail: d })}
+          />
           <label>메모<input value={note} onChange={(e) => setNote(e.target.value)} placeholder="예: 2026년 상반기 가격표" /></label>
           <label>
             파일
@@ -262,18 +286,36 @@ function FilesTab({ partnerId }: { partnerId: number }) {
 
       <section className="card">
         <h2 className="section-title">등록된 참고 자료</h2>
+        <div className="form-row" style={{ marginBottom: 12 }}>
+          <label style={{ flex: "0 0 200px" }}>
+            벤더
+            <select value={view.vendor} onChange={(e) => setView({ vendor: e.target.value, product: "", detail: "" })}>
+              <option value="">전체 벤더</option>
+              {vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+            </select>
+          </label>
+          <ProductSelect
+            filter
+            vendorName={vendors.find((v) => String(v.id) === view.vendor)?.name}
+            product={view.product}
+            detail={view.detail}
+            onChange={(p, d) => setView((x) => ({ ...x, product: p, detail: d }))}
+          />
+        </div>
         {remove.error && <p className="error">{remove.error.message}</p>}
         {files.data?.length === 0 && <p className="muted">아직 등록된 자료가 없습니다.</p>}
-        {!!files.data?.length && (
+        {!!files.data?.length && shown.length === 0 && <p className="muted">선택한 조건에 맞는 자료가 없습니다.</p>}
+        {shown.length > 0 && (
           <div className="table-wrap">
             <table style={{ minWidth: 720 }}>
-              <thead><tr><th>파일</th><th>종류</th><th>벤더</th><th>메모</th><th>등록일</th><th /></tr></thead>
+              <thead><tr><th>파일</th><th>종류</th><th>벤더</th><th>제품</th><th>메모</th><th>등록일</th><th /></tr></thead>
               <tbody>
-                {files.data.map((f) => (
+                {shown.map((f) => (
                   <tr key={f.id}>
                     <td><button className="link" onClick={() => download(`/quote-files/${f.id}/download`)}>{f.filename}</button></td>
                     <td>{QUOTE_CATEGORY_LABELS[f.category]}</td>
                     <td>{f.vendor_name ?? <span className="muted">-</span>}</td>
+                    <td>{productLabel(f.product, f.product_detail)}</td>
                     <td>{f.note ?? <span className="muted">-</span>}</td>
                     <td style={{ whiteSpace: "nowrap" }}>{new Date(f.created_at).toLocaleDateString()}</td>
                     <td>

@@ -17,9 +17,11 @@ import GuidesPage, { OrgTypePage, RegisteredTypePage } from "./pages/GuidesPage"
 import LoginPage from "./pages/LoginPage";
 import PartnerGuidePage from "./pages/PartnerGuidePage";
 import QuotesPage from "./pages/QuotesPage";
-import { DomainRequestPage, MyRequestsPage, OrgGuidesPage } from "./pages/RequestsPages";
+import { DomainRequestPage, MyRequestsPage } from "./pages/RequestsPages";
 import { PermissionRequestPage } from "./pages/PermissionPages";
 import GuideSharePage from "./pages/GuideSharePage";
+import HomeDetailPage from "./pages/HomeDetailPage";
+import TrashPage from "./pages/TrashPage";
 import NotificationBell from "./NotificationBell";
 import SettingsPage from "./pages/SettingsPage";
 import SharedPage from "./pages/SharedPage";
@@ -32,6 +34,8 @@ export default function App() {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/signup" element={<SignupPage />} />
       <Route path="/" element={<Protected><DashboardPage /></Protected>} />
+      <Route path="/home/:view" element={<Protected><HomeDetailPage /></Protected>} />
+      <Route path="/trash" element={<Protected><TrashPage /></Protected>} />
       <Route path="/documents" element={<Protected><DocumentsPage /></Protected>} />
       <Route path="/documents/registered" element={<Protected><RegisteredDocumentsPage /></Protected>} />
       <Route path="/my-requests" element={<Navigate to="/requests" replace />} />
@@ -44,7 +48,7 @@ export default function App() {
       <Route path="/brochures/org" element={<Protected><OrgTypePage key="brochure-org" docType="brochure" /></Protected>} />
       <Route path="/documents/:id" element={<Protected><DocumentPage /></Protected>} />
       <Route path="/guides" element={<Protected><GuidesPage /></Protected>} />
-      <Route path="/guides/org" element={<Protected><OrgGuidesPage /></Protected>} />
+      <Route path="/guides/org" element={<Protected><OrgTypePage key="guide-org" docType="guide" /></Protected>} />
       <Route path="/guides/share" element={<Protected><GuideSharePage /></Protected>} />
       <Route path="/guides/:id" element={<Protected><GuidePage /></Protected>} />
       <Route path="/partner-guides/:id" element={<Protected><PartnerGuidePage /></Protected>} />
@@ -275,6 +279,7 @@ function UserMenu() {
             </button>
           )}
           <button className="dropdown-item" role="menuitem" onClick={() => go("/requests")}>내 요청 사항</button>
+          <button className="dropdown-item" role="menuitem" onClick={() => go("/trash")}>휴지통</button>
           {me.role !== "platform_admin" && (
             <button className="dropdown-item" role="menuitem" onClick={() => go("/requests/domain")}>도메인 권한 요청</button>
           )}

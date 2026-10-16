@@ -63,6 +63,8 @@ export interface DocumentSummary {
   title: string | null;
   doc_type: "spec" | "guide" | "brochure";
   guide_kind: "technical" | "troubleshooting" | null;
+  product: string | null;
+  product_detail: string | null;
   description: string | null;
   partner_id: number | null;
   partner_name: string | null;
@@ -310,6 +312,7 @@ export interface DashboardData {
     approved_sections: number;
     total_sections: number;
     exports: number;
+    export_files: { id: number; format: string; doc_version: string; created_at: string }[];
   }[];
 }
 
@@ -448,6 +451,8 @@ export interface QuoteFile {
   partner_id: number | null;
   vendor_id: number | null;
   vendor_name: string | null;
+  product: string | null;
+  product_detail: string | null;
   category: "spec" | "feature" | "price" | "other";
   filename: string;
   note: string | null;

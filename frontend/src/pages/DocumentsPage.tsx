@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, download } from "../api";
 import { useAuth } from "../auth";
 import { DOC_TYPES, GUIDE_KINDS, STATUS_LABELS, type DocTypeKey, type GuideKindKey } from "../labels";
+import ProductSelect, { productLabel } from "../ProductSelect";
 import type { DocumentSummary } from "../types";
 
 const IN_PROGRESS = new Set(["uploaded", "parsing"]);
@@ -53,13 +54,19 @@ export function RegisteredDocumentsPage() {
     const who = next.type ? "" : next.author === undefined ? author : next.author;
     setParams({ type, ...(vendor ? { vendor: String(vendor) } : {}), ...(who ? { author: String(who) } : {}) });
   };
-  const query = [`doc_type=${docType}`, listVendor && `vendor_id=${listVendor}`, author && `uploaded_by=${author}`].filter(Boolean).join("&");
+  // 등록한 문서는 본인이 올린 것만 (다른 사람 문서는 규격서·가이드·브로슈어 메뉴에서). 관리자는 전체.
+  const isAdmin = me?.role === "platform_admin";
+  const who = isAdmin ? author : me?.id ?? 0;
+  const query = [`doc_type=${docType}`, listVendor && `vendor_id=${listVendor}`, who && `uploaded_by=${who}`].filter(Boolean).join("&");
 
   return (
     <>
       <div className="page-header">
         <h1>등록한 문서</h1>
-        <p className="muted">문서 등록에서 올린 문서를 종류별로 봅니다. 새 문서는 <Link to="/documents">문서 등록</Link>에서 올리세요.</p>
+        <p className="muted">
+          내가 문서 등록에서 올린 문서를 종류별로 봅니다. 다른 사람이 올린 문서는 상단의 규격서·가이드·브로슈어 메뉴에서 확인하세요.
+          새 문서는 <Link to="/documents">문서 등록</Link>에서 올리세요.
+        </p>
       </div>
 
       <div className="filters">
@@ -82,13 +89,15 @@ export function RegisteredDocumentsPage() {
               {vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
             </select>
           </label>
-          <label style={{ flex: "0 0 240px" }}>
-            등록자
-            <select value={author} onChange={(e) => go({ author: Number(e.target.value) || "" })}>
-              <option value="">전체 등록자</option>
-              {authors.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
-            </select>
-          </label>
+          {isAdmin && (
+            <label style={{ flex: "0 0 240px" }}>
+              등록자
+              <select value={author} onChange={(e) => go({ author: Number(e.target.value) || "" })}>
+                <option value="">전체 등록자</option>
+                {authors.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+              </select>
+            </label>
+          )}
         </div>
         {/* 문서 탭은 분석 화면이 아니므로 상태 열을 두지 않는다 */}
         <DocumentTable query={query} showGuideKind={docType === "guide"} showStatus={false} />
@@ -127,8 +136,9 @@ export function DocumentTable({
   if (docs.isLoading) return <p className="muted">불러오는 중…</p>;
   if (docs.error) return <p className="error">{docs.error.message}</p>;
   if (!docs.data?.length) return <p className="muted">등록된 문서가 없습니다.</p>;
-  // 삭제는 관리자 또는 문서를 올린 사람만 (공유받거나 열람하는 문서는 읽기 전용)
-  const canDeleteAny = isAdmin || docs.data.some((d) => d.uploaded_by === me?.id);
+  // 삭제(휴지통으로 이동)는 관리자 또는 같은 조직 문서만 (공유받거나 도메인 권한으로 보는 문서는 읽기 전용)
+  const canDelete = (d: DocumentSummary) => isAdmin || (d.access === "own" && d.partner_id != null && d.partner_id === me?.partner_id);
+  const canDeleteAny = docs.data.some(canDelete);
   return (
     <div className="table-wrap">
       {remove.error && <p className="error">{remove.error.message}</p>}
@@ -139,7 +149,7 @@ export function DocumentTable({
             <th>문서 이름</th>
             {showDocType && <th>문서 목적</th>}
             {showGuideKind && <th>가이드 종류</th>}
-            <th>설명</th><th>벤더</th><th>등록자</th><th>등록 날짜</th><th>형식·분량</th>
+            <th>설명</th><th>벤더</th><th>제품</th><th>등록자</th><th>등록 날짜</th><th>형식·분량</th>
             {showStatus && <th>상태</th>}
             <th>다운로드</th>
             {canDeleteAny && <th>삭제</th>}
@@ -159,6 +169,7 @@ export function DocumentTable({
               )}
               <td style={{ maxWidth: 280 }}>{d.description ?? <span className="muted">-</span>}</td>
               <td>{d.vendor_name}</td>
+              <td>{productLabel(d.product, d.product_detail)}</td>
               <td style={{ whiteSpace: "nowrap" }}>{d.uploaded_by_name ?? "-"}</td>
               <td style={{ whiteSpace: "nowrap" }}>{new Date(d.created_at).toLocaleDateString()}</td>
               <td style={{ whiteSpace: "nowrap" }}>{d.source_type.toUpperCase()}{d.page_count ? ` · ${d.page_count}쪽` : ""}</td>
@@ -170,14 +181,14 @@ export function DocumentTable({
               </td>
               {canDeleteAny && (
                 <td>
-                  {(isAdmin || d.uploaded_by === me?.id) && <button
+                  {canDelete(d) && <button
                     className="icon-button sm danger"
                     title="삭제"
                     aria-label={`${d.title ?? "문서"} 삭제`}
                     disabled={remove.isPending}
                     onClick={() =>
                       window.confirm(`'${d.title ?? "문서"}' 문서를 삭제할까요?
-목차, 요약 가이드, 생성한 문서 기록도 함께 지워지며 되돌릴 수 없습니다.`) &&
+휴지통으로 옮겨지며, 사용자 메뉴의 휴지통에서 언제든 원래대로 복구할 수 있습니다.`) &&
                       remove.mutate(d.id)
                     }
                   >
@@ -283,6 +294,7 @@ function UploadForm({
   const docType = chosenType ?? defaultType; // 고르기 전에는 지금 보고 있는 탭
   const [guideKind, setGuideKind] = useState<GuideKindKey>("technical");
   const [vendorId, setVendorId] = useState<number | "">("");
+  const [product, setProduct] = useState({ product: "", detail: "" });
   const [mode, setMode] = useState<"file" | "url">("file");
   const [file, setFile] = useState<File | null>(null);
   const [url, setUrl] = useState("");
@@ -294,6 +306,8 @@ function UploadForm({
     mutationFn: () => {
       const form = new FormData();
       form.append("vendor_id", String(vendorId));
+      if (product.product) form.append("product", product.product);
+      if (product.detail) form.append("product_detail", product.detail);
       form.append("doc_type", docType);
       if (docType === "guide") form.append("guide_kind", guideKind);
       if (title) form.append("title", title);
@@ -342,11 +356,24 @@ function UploadForm({
             )}
             <label>
               벤더 도메인
-              <select value={vendorId} onChange={(e) => setVendorId(Number(e.target.value) || "")} required>
+              <select
+                value={vendorId}
+                onChange={(e) => {
+                  setVendorId(Number(e.target.value) || "");
+                  setProduct({ product: "", detail: "" });
+                }}
+                required
+              >
                 <option value="">선택</option>
                 {vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
               </select>
             </label>
+            <ProductSelect
+              vendorName={vendors.find((v) => v.id === vendorId)?.name}
+              product={product.product}
+              detail={product.detail}
+              onChange={(p, d) => setProduct({ product: p, detail: d })}
+            />
             <label>
               제목 (선택)
               <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="비우면 문서 속 제목 또는 파일명 사용" />

@@ -411,3 +411,11 @@ table.table-resizable td :is(button, .badge) { white-space: nowrap; overflow-wra
 .scope-option { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; }
 .scope-option input { margin-top: 3px; }
 .scope-option.owned { background: var(--surface-2); cursor: default; }
+
+/* 링크로 된 탭 (홈 처리 현황 화면) */
+.filters .filter-link {
+  border-bottom: 2px solid transparent; padding: 10px 14px; margin-bottom: -1px; color: var(--text-2); font-weight: 700;
+}
+.filters .filter-link:hover { color: var(--accent); text-decoration: none; border-bottom-color: var(--border-strong); }
+.filters .filter-link.active { color: var(--accent); border-bottom-color: var(--accent); }
+a.stat-card { text-decoration: none; }

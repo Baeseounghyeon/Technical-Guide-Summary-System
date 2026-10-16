@@ -160,6 +160,8 @@ class DocumentOut(ORM):
     title: str | None
     doc_type: str
     guide_kind: str | None  # 기술 가이드 문서만: technical | troubleshooting
+    product: str | None = None
+    product_detail: str | None = None
     description: str | None
     partner_id: int | None
     partner_name: str | None
@@ -473,6 +475,13 @@ class DashboardCounts(BaseModel):
     pending_reviews: int  # 검토 중 문서에서 아직 승인하지 않은 요약 항목 수
 
 
+class DashboardExport(BaseModel):
+    id: int
+    format: str
+    doc_version: str
+    created_at: UTCDateTime
+
+
 class DashboardDocument(BaseModel):
     id: int
     title: str
@@ -486,6 +495,7 @@ class DashboardDocument(BaseModel):
     approved_sections: int
     total_sections: int
     exports: int
+    export_files: list[DashboardExport] = []  # 생성 완료된 최종 문서 (내려받기용)
 
 
 class DashboardOut(BaseModel):
@@ -626,6 +636,8 @@ class QuoteFileOut(ORM):
     partner_id: int | None
     vendor_id: int | None
     vendor_name: str | None = None
+    product: str | None = None
+    product_detail: str | None = None
     category: str
     filename: str
     note: str | None

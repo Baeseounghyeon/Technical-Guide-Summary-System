@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..deps import get_active_user
 from ..models import DocStatus, ExportStatus, GuideStatus, SourceDocument, SummaryStatus, User
-from ..schemas import DashboardCounts, DashboardDocument, DashboardOut
+from ..schemas import DashboardCounts, DashboardDocument, DashboardExport, DashboardOut
 
 router = APIRouter(prefix="/api", tags=["대시보드"])
 
@@ -20,7 +20,9 @@ FAILED_STAGES = {"failed"}
 def dashboard(user: User = Depends(get_active_user), db: Session = Depends(get_db)) -> DashboardOut:
     docs = list(
         db.scalars(
-            select(SourceDocument).where(SourceDocument.uploaded_by == user.id).order_by(SourceDocument.created_at.desc())
+            select(SourceDocument)
+            .where(SourceDocument.uploaded_by == user.id, SourceDocument.deleted_at.is_(None))
+            .order_by(SourceDocument.created_at.desc())
         )
     )
     rows = [_document_row(d) for d in docs]
@@ -70,4 +72,9 @@ def _document_row(doc: SourceDocument) -> DashboardDocument:
         approved_sections=approved,
         total_sections=total,
         exports=exports,
+        export_files=[
+            DashboardExport(id=e.id, format=e.format, doc_version=e.doc_version, created_at=e.created_at)
+            for e in sorted(guide.exports, key=lambda e: e.id, reverse=True)
+            if e.status == ExportStatus.DONE
+        ] if guide else [],
     )
