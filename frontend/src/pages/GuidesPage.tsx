@@ -4,7 +4,7 @@ import { api } from "../api";
 import { useAuth } from "../auth";
 import { GUIDE_KINDS, type GuideKindKey } from "../labels";
 import type { DocumentSummary } from "../types";
-import { DocumentTable } from "./DocumentsPage";
+import { DocumentTable, uniqueOptions } from "./DocumentsPage";
 
 type Filters = { vendor: number | ""; kind: GuideKindKey | ""; partner: number | ""; author: number | "" };
 
@@ -52,11 +52,12 @@ export default function GuidesPage() {
       <div className="page-header">
         <h1>가이드</h1>
         <p className="muted">
-          문서 가져오기에서 '벤더 기술 가이드'로 등록한 문서입니다. 새 가이드는 <Link to="/documents?type=guide">문서</Link>에서 올리세요.
+          문서 가져오기에서 '벤더 기술 가이드'로 등록한 문서입니다. 새 가이드는 <Link to="/documents">문서 등록</Link>에서 올리세요.
         </p>
       </div>
+      {/* 선택칸 상자와 가이드 목록 상자를 나눠 둔다 */}
       <section className="card">
-        <div className="form-row" style={{ marginBottom: 12 }}>
+        <div className="form-row">
           <label style={{ flex: "0 0 200px" }}>
             벤더
             <select value={filters.vendor} onChange={(e) => go({ vendor: Number(e.target.value) || "" })}>
@@ -86,19 +87,12 @@ export default function GuidesPage() {
             </select>
           </label>
         </div>
-        <h2 className="section-title">{kindLabel ? `등록된 ${kindLabel}` : "등록된 가이드"}</h2>
+      </section>
+      <section className="card">
+        <h2 className="section-title">{kindLabel ? `등록한 ${kindLabel}` : "등록한 가이드"}</h2>
         {/* 종류를 고르면 그 종류만 보이므로 종류 열은 전체일 때만 보여 준다 */}
         <DocumentTable query={query} showGuideKind={!filters.kind} />
       </section>
     </>
   );
-}
-
-function uniqueOptions(docs: DocumentSummary[], pick: (d: DocumentSummary) => [number, string] | null): [number, string][] {
-  const map = new Map<number, string>();
-  for (const d of docs) {
-    const option = pick(d);
-    if (option) map.set(option[0], option[1]);
-  }
-  return [...map.entries()].sort((a, b) => a[1].localeCompare(b[1], "ko"));
 }

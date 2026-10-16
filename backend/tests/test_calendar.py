@@ -43,3 +43,31 @@ def test_personal_events(client):
     assert client.delete(f"/api/calendar/events/{meeting['id']}", headers=other).status_code == 404
     assert client.delete(f"/api/calendar/events/{meeting['id']}", headers=user).status_code == 204
     assert titles("2026-10-01", "2026-10-31") == ["휴가"]
+
+
+def test_my_requests_and_org_guides(client, tmp_path):
+    """내 요청 사항(내가 요청한 요약)과 조직 요청 가이드(같은 회사), 다른 회사는 안 보임."""
+    from app.worker import run_pending_jobs
+
+    from .test_flow import _make_vendor_docx
+
+    admin = login(client, *ADMIN)
+    partner, vendor = _partner_with_vendor(client, admin, "요청파트너", "RequestVendor")
+    other_partner, _ = _partner_with_vendor(client, admin, "다른요청파트너", "OtherRequestVendor")
+    a = _signup_and_approve(client, admin, "req-a@r.example.com", partner["id"])
+    b = _signup_and_approve(client, admin, "req-b@r.example.com", partner["id"])
+    outsider = _signup_and_approve(client, admin, "req-x@r.example.com", other_partner["id"])
+    src = tmp_path / "v.docx"
+    _make_vendor_docx(src)
+    with src.open("rb") as f:
+        doc_id = client.post("/api/documents", data={"vendor_id": vendor["id"], "title": "요청 문서"}, files={"file": ("v.docx", f)}, headers=a).json()["id"]
+    run_pending_jobs()
+    guide_id = client.post(f"/api/documents/{doc_id}/guides", json={"target_language": "ko"}, headers=a).json()["id"]
+    run_pending_jobs()
+
+    mine = client.get("/api/my-requests", headers=a).json()
+    assert [r["guide_id"] for r in mine] == [guide_id] and mine[0]["total"] == 3 and mine[0]["document_title"] == "요청 문서"
+    assert client.get("/api/my-requests", headers=b).json() == []
+    org = client.get("/api/org-guides", headers=b).json()  # 같은 회사 동료에게 보인다
+    assert [r["guide_id"] for r in org] == [guide_id] and org[0]["requested_by_name"] and org[0]["exports"] == []
+    assert client.get("/api/org-guides", headers=outsider).json() == []

@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, download } from "../api";
 import { useAuth } from "../auth";
@@ -8,30 +8,52 @@ import type { DocumentSummary } from "../types";
 
 const IN_PROGRESS = new Set(["uploaded", "parsing"]);
 
-/** 벤더 문서: 규격서·기술 가이드·브로슈어 탭. 문서 가져오기는 하나로 두고 등록할 탭(종류)을 고른다. */
+/** 문서 등록: 벤더 문서 가져오기만 보여 준다. 올린 뒤에는 '등록한 문서'의 해당 종류 탭으로 간다. */
 export default function DocumentsPage() {
-  const { me } = useAuth();
-  const [params, setParams] = useSearchParams();
-  const docType = (DOC_TYPES.some((t) => t.key === params.get("type")) ? params.get("type") : "guide") as DocTypeKey;
-  const listVendor = Number(params.get("vendor")) || "";
-  const vendors = me?.vendors ?? [];
-  const current = DOC_TYPES.find((t) => t.key === docType)!;
-
-  // 탭·벤더를 바꿔도 다른 쪽 선택은 유지한다.
-  const go = (next: { type?: DocTypeKey; vendor?: number | "" }) => {
-    const type = next.type ?? docType;
-    const vendor = next.vendor === undefined ? listVendor : next.vendor;
-    setParams({ type, ...(vendor ? { vendor: String(vendor) } : {}) });
-  };
-
+  const navigate = useNavigate();
   return (
     <>
       <div className="page-header">
         <h1>벤더 문서</h1>
-        <p className="muted">벤더의 규격서·기술 가이드·브로슈어를 종류별로 등록하고 봅니다. 기술 가이드는 목차를 분석한 뒤 요약할 수 있습니다.</p>
+        <p className="muted">
+          벤더의 규격서·기술 가이드·브로슈어를 등록합니다. 기술 가이드는 목차를 분석한 뒤 요약할 수 있습니다. 올린 문서는{" "}
+          <Link to="/documents/registered">등록한 문서</Link>에서 봅니다.
+        </p>
       </div>
+      <UploadForm defaultType="guide" onUploaded={(type) => navigate(`/documents/registered?type=${type}`)} />
+    </>
+  );
+}
 
-      <UploadForm defaultType={docType} onUploaded={(type) => type !== docType && go({ type })} />
+/** 등록한 문서: 규격서·기술 가이드·브로슈어 탭, 벤더·등록자로 거른다. */
+export function RegisteredDocumentsPage() {
+  const { me } = useAuth();
+  const [params, setParams] = useSearchParams();
+  const docType = (DOC_TYPES.some((t) => t.key === params.get("type")) ? params.get("type") : "spec") as DocTypeKey;
+  const listVendor = Number(params.get("vendor")) || "";
+  const author = Number(params.get("author")) || "";
+  const vendors = me?.vendors ?? [];
+  const current = DOC_TYPES.find((t) => t.key === docType)!;
+
+  // 등록자 선택지는 지금 탭(종류)의 문서 전체에서 뽑는다.
+  const all = useQuery({ queryKey: ["documents", `doc_type=${docType}`], queryFn: () => api<DocumentSummary[]>(`/documents?doc_type=${docType}`) });
+  const authors = uniqueOptions(all.data ?? [], (d) => [d.uploaded_by, d.uploaded_by_name ?? `사용자 ${d.uploaded_by}`]);
+
+  // 탭을 바꾸면 등록자 선택은 풀고(종류마다 등록자가 다름), 벤더 선택은 유지한다.
+  const go = (next: { type?: DocTypeKey; vendor?: number | ""; author?: number | "" }) => {
+    const type = next.type ?? docType;
+    const vendor = next.vendor === undefined ? listVendor : next.vendor;
+    const who = next.type ? "" : next.author === undefined ? author : next.author;
+    setParams({ type, ...(vendor ? { vendor: String(vendor) } : {}), ...(who ? { author: String(who) } : {}) });
+  };
+  const query = [`doc_type=${docType}`, listVendor && `vendor_id=${listVendor}`, author && `uploaded_by=${author}`].filter(Boolean).join("&");
+
+  return (
+    <>
+      <div className="page-header">
+        <h1>등록한 문서</h1>
+        <p className="muted">문서 등록에서 올린 문서를 종류별로 봅니다. 새 문서는 <Link to="/documents">문서 등록</Link>에서 올리세요.</p>
+      </div>
 
       <div className="filters">
         {DOC_TYPES.map((t) => (
@@ -46,25 +68,42 @@ export default function DocumentsPage() {
           <h2 style={{ margin: 0 }}>{current.full}</h2>
         </div>
         <div className="form-row" style={{ margin: "8px 0 12px" }}>
-          <label style={{ flex: "0 0 260px" }}>
+          <label style={{ flex: "0 0 240px" }}>
             벤더
             <select value={listVendor} onChange={(e) => go({ vendor: Number(e.target.value) || "" })}>
               <option value="">전체 벤더</option>
               {vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
             </select>
           </label>
+          <label style={{ flex: "0 0 240px" }}>
+            등록자
+            <select value={author} onChange={(e) => go({ author: Number(e.target.value) || "" })}>
+              <option value="">전체 등록자</option>
+              {authors.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+            </select>
+          </label>
         </div>
-        <DocumentTable
-          query={`doc_type=${docType}${listVendor ? `&vendor_id=${listVendor}` : ""}`}
-          showGuideKind={docType === "guide"}
-        />
+        {/* 문서 탭은 분석 화면이 아니므로 상태 열을 두지 않는다 */}
+        <DocumentTable query={query} showGuideKind={docType === "guide"} showStatus={false} />
       </section>
     </>
   );
 }
 
+/** 문서 목록에서 (id, 이름) 선택지를 중복 없이 이름순으로 뽑는다. */
+export function uniqueOptions(docs: DocumentSummary[], pick: (d: DocumentSummary) => [number, string] | null): [number, string][] {
+  const map = new Map<number, string>();
+  for (const d of docs) {
+    const option = pick(d);
+    if (option) map.set(option[0], option[1]);
+  }
+  return [...map.entries()].sort((a, b) => a[1].localeCompare(b[1], "ko"));
+}
+
 /** 문서 표 (문서 화면의 종류별 탭과 가이드 화면이 함께 쓴다). query 는 /documents 목록 API 의 검색 조건. */
-export function DocumentTable({ query, showGuideKind = false }: { query: string; showGuideKind?: boolean }) {
+export function DocumentTable({
+  query, showGuideKind = false, showStatus = true,
+}: { query: string; showGuideKind?: boolean; showStatus?: boolean }) {
   const { me } = useAuth();
   const isAdmin = me?.role === "platform_admin";
   const queryClient = useQueryClient();
@@ -90,8 +129,10 @@ export function DocumentTable({ query, showGuideKind = false }: { query: string;
           <tr>
             <th>문서 이름</th>
             {showGuideKind && <th>가이드 종류</th>}
-            <th>설명</th><th>벤더</th><th>등록자</th><th>등록 날짜</th><th>형식·분량</th><th>상태</th><th>다운로드</th>
-            {isAdmin && <th>관리</th>}
+            <th>설명</th><th>벤더</th><th>등록자</th><th>등록 날짜</th><th>형식·분량</th>
+            {showStatus && <th>상태</th>}
+            <th>다운로드</th>
+            {isAdmin && <th>삭제</th>}
           </tr>
         </thead>
         <tbody>
@@ -106,7 +147,7 @@ export function DocumentTable({ query, showGuideKind = false }: { query: string;
               <td style={{ whiteSpace: "nowrap" }}>{d.uploaded_by_name ?? "-"}</td>
               <td style={{ whiteSpace: "nowrap" }}>{new Date(d.created_at).toLocaleDateString()}</td>
               <td style={{ whiteSpace: "nowrap" }}>{d.source_type.toUpperCase()}{d.page_count ? ` · ${d.page_count}쪽` : ""}</td>
-              <td><span className={`badge ${d.status}`}>{STATUS_LABELS[d.status]}</span></td>
+              {showStatus && <td><span className={`badge ${d.status}`}>{STATUS_LABELS[d.status]}</span></td>}
               <td>
                 <button className="icon-button sm" title="다운로드" aria-label={`${d.title ?? "문서"} 다운로드`} onClick={() => setDownloading(d)}>
                   <DownloadIcon />
@@ -115,7 +156,9 @@ export function DocumentTable({ query, showGuideKind = false }: { query: string;
               {isAdmin && (
                 <td>
                   <button
-                    className="link danger-link"
+                    className="icon-button sm danger"
+                    title="삭제"
+                    aria-label={`${d.title ?? "문서"} 삭제`}
                     disabled={remove.isPending}
                     onClick={() =>
                       window.confirm(`'${d.title ?? "문서"}' 문서를 삭제할까요?
@@ -123,7 +166,7 @@ export function DocumentTable({ query, showGuideKind = false }: { query: string;
                       remove.mutate(d.id)
                     }
                   >
-                    삭제
+                    <TrashIcon />
                   </button>
                 </td>
               )}
@@ -132,6 +175,17 @@ export function DocumentTable({ query, showGuideKind = false }: { query: string;
         </tbody>
       </table>
     </div>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M3 6h18" />
+      <path d="M8 6V4h8v2" />
+      <path d="M19 6l-1 14H6L5 6" />
+      <path d="M10 11v6M14 11v6" />
+    </svg>
   );
 }
 

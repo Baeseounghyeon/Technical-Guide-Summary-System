@@ -398,3 +398,5 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 .purpose-chip.selected { border-color: var(--chip); background: color-mix(in srgb, var(--chip) 12%, white); }
 /* 좁힌 열에서도 버튼·상태 표시는 글자 단위로 쪼개지지 않게 */
 table.table-resizable td :is(button, .badge) { white-space: nowrap; overflow-wrap: normal; }
+
+.icon-button.danger:hover:not(:disabled) { color: var(--danger); border-color: var(--danger); }

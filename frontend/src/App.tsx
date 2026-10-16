@@ -4,19 +4,20 @@ import { Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from
 import logoUrl from "./assets/unipoint-logo.png";
 import { useAuth } from "./auth";
 import ColumnResizer from "./ColumnResizer";
-import { DOC_TYPES, ROLE_LABELS, TRACK_LABELS } from "./labels";
+import { ROLE_LABELS, TRACK_LABELS } from "./labels";
 import AdminPage from "./pages/AdminPage";
 import CommunityPage from "./pages/CommunityPage";
 import DashboardPage from "./pages/DashboardPage";
 import DomainPage from "./pages/DomainPage";
 import PostPage from "./pages/PostPage";
 import DocumentPage from "./pages/DocumentPage";
-import DocumentsPage from "./pages/DocumentsPage";
+import DocumentsPage, { RegisteredDocumentsPage } from "./pages/DocumentsPage";
 import GuidePage from "./pages/GuidePage";
 import GuidesPage from "./pages/GuidesPage";
 import LoginPage from "./pages/LoginPage";
 import PartnerGuidePage from "./pages/PartnerGuidePage";
 import QuotesPage from "./pages/QuotesPage";
+import { MyRequestsPage, OrgGuidesPage } from "./pages/RequestsPages";
 import NotificationBell from "./NotificationBell";
 import SettingsPage from "./pages/SettingsPage";
 import SharedPage from "./pages/SharedPage";
@@ -30,8 +31,11 @@ export default function App() {
       <Route path="/signup" element={<SignupPage />} />
       <Route path="/" element={<Protected><DashboardPage /></Protected>} />
       <Route path="/documents" element={<Protected><DocumentsPage /></Protected>} />
+      <Route path="/documents/registered" element={<Protected><RegisteredDocumentsPage /></Protected>} />
+      <Route path="/my-requests" element={<Protected><MyRequestsPage /></Protected>} />
       <Route path="/documents/:id" element={<Protected><DocumentPage /></Protected>} />
       <Route path="/guides" element={<Protected><GuidesPage /></Protected>} />
+      <Route path="/guides/org" element={<Protected><OrgGuidesPage /></Protected>} />
       <Route path="/guides/:id" element={<Protected><GuidePage /></Protected>} />
       <Route path="/partner-guides/:id" element={<Protected><PartnerGuidePage /></Protected>} />
       <Route path="/shared" element={<Protected><SharedPage /></Protected>} />
@@ -89,16 +93,23 @@ type MenuItem = { key: string; label: string; to: string; active: boolean };
 
 /** 상단 '문서' 메뉴: 마우스를 올리면 규격서·기술 가이드·브로슈어가 펼쳐진다 (누르면 문서 화면). */
 function DocsMenu() {
-  const { pathname, search } = useLocation();
-  const currentType = pathname === "/documents" ? (new URLSearchParams(search).get("type") ?? "guide") : null;
-  const items = DOC_TYPES.map((t) => ({ key: t.key, label: t.label, to: `/documents?type=${t.key}`, active: currentType === t.key }));
-  return <HoverMenu to="/documents" label="문서" items={items} />;
+  const { pathname } = useLocation();
+  const items = [
+    { key: "upload", label: "문서 등록", to: "/documents", active: pathname === "/documents" },
+    { key: "registered", label: "등록한 문서", to: "/documents/registered", active: pathname === "/documents/registered" },
+    { key: "requests", label: "내 요청 사항", to: "/my-requests", active: pathname === "/my-requests" },
+  ];
+  return <HoverMenu to="/documents" label="문서" items={items} alsoActive={pathname === "/my-requests"} />;
 }
 
-/** 상단 '가이드' 메뉴: 누르면 등록된 가이드, 마우스를 올리면 '가이드 공유'가 펼쳐진다. */
+/** 상단 '가이드' 메뉴: 누르면 등록한 가이드, 마우스를 올리면 등록한 가이드·조직 요청 가이드·가이드 공유. */
 function GuidesMenu() {
   const { pathname } = useLocation();
-  const items = [{ key: "shared", label: "가이드 공유", to: "/shared", active: pathname === "/shared" }];
+  const items = [
+    { key: "registered", label: "등록한 가이드", to: "/guides", active: pathname === "/guides" },
+    { key: "org", label: "조직 요청 가이드", to: "/guides/org", active: pathname === "/guides/org" },
+    { key: "shared", label: "가이드 공유", to: "/shared", active: pathname === "/shared" },
+  ];
   return <HoverMenu to="/guides" label="가이드" items={items} alsoActive={pathname === "/shared"} />;
 }
 
@@ -227,6 +238,7 @@ function UserMenu() {
               {isSales ? "견적서 로고·양식 변경" : "회사 로고·양식 변경"}
             </button>
           )}
+          <button className="dropdown-item" role="menuitem" onClick={() => go("/my-requests")}>내 요청 사항</button>
           {me.role !== "platform_admin" && (
             <button className="dropdown-item" role="menuitem" onClick={() => go("/community#access")}>다른 도메인 권한 신청</button>
           )}
