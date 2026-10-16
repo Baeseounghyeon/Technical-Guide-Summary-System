@@ -5,6 +5,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import Response
+from pydantic import BaseModel
 from sqlalchemy import delete, or_, select
 from sqlalchemy.orm import Session
 
@@ -13,11 +14,14 @@ from ..deps import (
     accessible_vendors,
     ensure_vendor_access,
     get_active_user,
+    document_access,
     get_document_for_user,
+    get_readable_document,
+    granted_vendor_ids,
     is_admin,
     require_platform_admin,
 )
-from ..models import DocStatus, DocType, GuideKind, JobKind, Section, SourceDocument, User
+from ..models import DocStatus, DocType, DocumentShare, GuideKind, JobKind, Partner, Section, SourceDocument, User
 from ..schemas import DocumentDetail, DocumentOut, GuideBrief, SectionOut, SectionPatch
 from ..services.jobs import enqueue
 from ..services.exporters.document_export import MEDIA_TYPES, build_document_file, doc_info
@@ -87,13 +91,25 @@ def list_documents(
     guide_kind: Literal["technical", "troubleshooting"] | None = None,
     partner_id: int | None = None,
     uploaded_by: int | None = None,
+    shared_to_me: bool = False,
     user: User = Depends(get_active_user),
     db: Session = Depends(get_db),
 ) -> list[DocumentOut]:
+    """내가 볼 수 있는 문서: 내 조직 문서 + 내 조직에 공유된 문서 + 도메인 권한이 승인된 벤더의 문서.
+    shared_to_me=true 면 다른 조직이 내 조직에 공유한 문서만."""
     query = select(SourceDocument).order_by(SourceDocument.created_at.desc())
-    if not is_admin(user):
+    shared_ids = select(DocumentShare.document_id).where(DocumentShare.partner_id == user.partner_id)
+    if shared_to_me:
+        query = query.where(SourceDocument.id.in_(shared_ids), SourceDocument.partner_id.is_distinct_from(user.partner_id))
+    elif not is_admin(user):
         vendor_ids = [v.id for v in accessible_vendors(db, user)]
-        query = query.where(SourceDocument.partner_id == user.partner_id, SourceDocument.vendor_id.in_(vendor_ids))
+        query = query.where(
+            or_(
+                (SourceDocument.partner_id == user.partner_id) & SourceDocument.vendor_id.in_(vendor_ids),
+                SourceDocument.id.in_(shared_ids),
+                SourceDocument.vendor_id.in_(granted_vendor_ids(db, user) or {-1}),
+            )
+        )
     if vendor_id is not None:
         query = query.where(SourceDocument.vendor_id == vendor_id)
     if doc_type == DocType.GUIDE:
@@ -109,16 +125,16 @@ def list_documents(
         query = query.where(or_(SourceDocument.guide_kind == GuideKind.TECHNICAL, SourceDocument.guide_kind.is_(None)))
     elif guide_kind is not None:
         query = query.where(SourceDocument.guide_kind == guide_kind)
-    return [_document_out(d) for d in db.scalars(query)]
+    return [_document_out(d, document_access(db, user, d) or "own") for d in db.scalars(query)]
 
 
 @router.get("/documents/{document_id}", response_model=DocumentDetail)
 def get_document(
     document_id: int, user: User = Depends(get_active_user), db: Session = Depends(get_db)
 ) -> DocumentDetail:
-    doc = get_document_for_user(db, user, document_id)
+    doc = get_readable_document(db, user, document_id)
     return DocumentDetail(
-        **_document_out(doc).model_dump(),
+        **_document_out(doc, document_access(db, user, doc) or "own").model_dump(),
         sections=[_section_out(s) for s in doc.sections],
         guides=[GuideBrief.model_validate(g) for g in doc.guides],
     )
@@ -138,7 +154,7 @@ def update_section(
     return _section_out(section)
 
 
-def _document_out(doc: SourceDocument) -> DocumentOut:
+def _document_out(doc: SourceDocument, access: str = "own") -> DocumentOut:
     return DocumentOut(
         id=doc.id,
         vendor_id=doc.vendor_id,
@@ -151,6 +167,8 @@ def _document_out(doc: SourceDocument) -> DocumentOut:
         partner_name=doc.partner.name if doc.partner else None,
         uploaded_by=doc.uploaded_by,
         uploaded_by_name=doc.uploader.name if doc.uploader else None,
+        access=access,
+        shared_with=sorted(s.partner.name for s in doc.shares),
         source_type=doc.source_type,
         url=doc.url,
         page_count=doc.page_count,
@@ -174,7 +192,7 @@ def _section_out(s: Section) -> SectionOut:
     )
 
 
-DOC_TYPE_LABELS = {"spec": "벤더 규격서", "guide": "벤더 기술 가이드", "brochure": "벤더 브로슈어"}
+DOC_TYPE_LABELS = {"spec": "규격서", "guide": "가이드", "brochure": "브로슈어"}
 DownloadFormat = Literal["original", "docx", "pptx", "xlsx", "pdf"]
 _UNSAFE_NAME = re.compile(r'[\\/:*?"<>|]')  # 파일 이름에 쓸 수 없는 문자
 
@@ -187,7 +205,7 @@ def download_document(
     db: Session = Depends(get_db),
 ) -> Response:
     """원본 파일 그대로, 또는 분석한 목차별 본문으로 Word·PowerPoint·Excel·PDF 를 만들어 내려받는다."""
-    doc = get_document_for_user(db, user, document_id)
+    doc = get_readable_document(db, user, document_id)
     storage = get_storage()
     base = _UNSAFE_NAME.sub("_", doc.title or f"document{doc.id}")[:120]
     original_ext = Path(doc.file_path).suffix.lower() if doc.file_path else ""
@@ -207,10 +225,43 @@ def download_document(
 
 
 @router.delete("/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_document(document_id: int, _admin: User = Depends(require_platform_admin), db: Session = Depends(get_db)) -> None:
-    """플랫폼 관리자 전용: 문서와 그 목차·요약 가이드·생성 문서 기록을 함께 지운다 (저장소 파일은 남긴다)."""
-    if db.get(SourceDocument, document_id) is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "문서를 찾을 수 없습니다.")
+def delete_document(document_id: int, user: User = Depends(get_active_user), db: Session = Depends(get_db)) -> None:
+    """플랫폼 관리자 또는 문서를 올린 사람: 문서와 그 목차·요약 가이드·생성 문서 기록을 함께 지운다 (저장소 파일은 남긴다)."""
+    doc = get_readable_document(db, user, document_id)
+    if not (is_admin(user) or doc.uploaded_by == user.id):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "문서를 올린 사람이나 관리자만 삭제할 수 있습니다.")
     # 하위 기록(목차·가이드·요약·생성 문서·파트너 비교 등)은 DB 의 ON DELETE CASCADE 로 함께 지워진다.
     db.execute(delete(SourceDocument).where(SourceDocument.id == document_id))
     db.commit()
+
+
+
+# ---------- 가이드 공유: 문서를 공유할 조직 ----------
+
+
+class ShareIn(BaseModel):
+    partner_ids: list[int]
+
+
+@router.get("/organizations")
+def list_organizations(_user: User = Depends(get_active_user), db: Session = Depends(get_db)) -> list[dict]:
+    """공유 범위로 고를 수 있는 조직(파트너사) 목록 (이름만)."""
+    return [{"id": p.id, "name": p.name} for p in db.scalars(select(Partner).order_by(Partner.name))]
+
+
+@router.put("/documents/{document_id}/shares", response_model=DocumentOut)
+def set_shares(document_id: int, body: ShareIn, user: User = Depends(get_active_user), db: Session = Depends(get_db)) -> DocumentOut:
+    """문서를 공유할 조직을 정한다 (여러 개). 문서를 올린 사람이나 관리자만."""
+    doc = get_readable_document(db, user, document_id)
+    if not (is_admin(user) or doc.uploaded_by == user.id):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "문서를 올린 사람이나 관리자만 공유 범위를 정할 수 있습니다.")
+    wanted = set(body.partner_ids) - ({doc.partner_id} if doc.partner_id else set())  # 내 조직은 원래 볼 수 있음
+    found = {p.id for p in db.scalars(select(Partner).where(Partner.id.in_(wanted)))} if wanted else set()
+    if found != wanted:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "없는 조직이 포함되어 있습니다.")
+    doc.shares = [s for s in doc.shares if s.partner_id in wanted]
+    have = {s.partner_id for s in doc.shares}
+    doc.shares += [DocumentShare(partner_id=pid) for pid in sorted(wanted - have)]
+    db.commit()
+    db.refresh(doc)
+    return _document_out(doc, document_access(db, user, doc) or "own")

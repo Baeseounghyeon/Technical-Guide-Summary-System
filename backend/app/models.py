@@ -198,6 +198,7 @@ class SourceDocument(Base):
     vendor: Mapped[Vendor] = relationship()
     uploader: Mapped["User"] = relationship(foreign_keys=[uploaded_by])
     partner: Mapped[Partner | None] = relationship()
+    shares: Mapped[list["DocumentShare"]] = relationship(cascade="all, delete-orphan")
     sections: Mapped[list["Section"]] = relationship(
         back_populates="document", order_by="Section.order_index", cascade="all, delete-orphan"
     )
@@ -536,6 +537,11 @@ class AccessGrant(Base):
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     decision_note: Mapped[str | None] = mapped_column(Text)
+    # 도메인 권한 요청 화면에서 받는 정보 (가입 정보로 미리 채우고 고칠 수 있음)
+    request_date: Mapped[str | None] = mapped_column(String(10))  # YYYY-MM-DD
+    requester_name: Mapped[str | None] = mapped_column(String(100))
+    requester_email: Mapped[str | None] = mapped_column(String(255))
+    requester_company: Mapped[str | None] = mapped_column(String(200))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     user: Mapped[User] = relationship(foreign_keys=[user_id])
@@ -655,3 +661,17 @@ class CalendarEvent(Base):
     end_time: Mapped[str | None] = mapped_column(String(5))  # HH:MM (마지막 날 끝)
     content: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class DocumentShare(Base):
+    """가이드 공유: 문서를 다른 조직(파트너사)에 공유한다. 공유받은 조직은 도메인 권한 요청 없이 읽을 수 있다."""
+
+    __tablename__ = "document_shares"
+    __table_args__ = (UniqueConstraint("document_id", "partner_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    document_id: Mapped[int] = mapped_column(ForeignKey("source_documents.id", ondelete="CASCADE"), index=True)
+    partner_id: Mapped[int] = mapped_column(ForeignKey("partners.id", ondelete="CASCADE"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    partner: Mapped[Partner] = relationship()

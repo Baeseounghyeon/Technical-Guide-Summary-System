@@ -88,9 +88,9 @@ export const GRANT_STATUS: Record<string, string> = {
 
 /** 문서 종류(목적). 상단 '문서' 메뉴와 문서 화면 탭에 쓴다. */
 export const DOC_TYPES = [
-  { key: "spec", label: "규격서", full: "벤더 규격서" },
-  { key: "guide", label: "기술 가이드", full: "벤더 기술 가이드" },
-  { key: "brochure", label: "브로슈어", full: "벤더 브로슈어" },
+  { key: "spec", label: "규격서", full: "규격서" },
+  { key: "guide", label: "가이드", full: "가이드" },
+  { key: "brochure", label: "브로슈어", full: "브로슈어" },
 ] as const;
 export type DocTypeKey = (typeof DOC_TYPES)[number]["key"];
 

@@ -253,7 +253,17 @@ def request_access(
         )
     ):
         raise HTTPException(status.HTTP_409_CONFLICT, "이미 승인 대기 중인 신청이 있습니다.")
-    grant = AccessGrant(user_id=user.id, vendor_id=vendor_id, reason=body.reason.strip(), requested_days=body.days)
+    clean = lambda v: (v or "").strip() or None  # noqa: E731
+    grant = AccessGrant(
+        user_id=user.id,
+        vendor_id=vendor_id,
+        reason=body.reason.strip(),
+        requested_days=body.days,
+        request_date=body.request_date,
+        requester_name=clean(body.requester_name) or user.name,
+        requester_email=clean(body.requester_email) or user.email,
+        requester_company=clean(body.requester_company) or user.company_name,
+    )
     db.add(grant)
     db.commit()
     return _grant_out(db, grant)
@@ -445,6 +455,10 @@ def _grant_out(db: Session, g: AccessGrant) -> AccessGrantOut:
         vendor_name=g.vendor.name,
         reason=g.reason,
         requested_days=g.requested_days,
+        request_date=g.request_date,
+        requester_name=g.requester_name,
+        requester_email=g.requester_email,
+        requester_company=g.requester_company,
         status=g.status,
         grant_type=g.grant_type,
         active=_grant_active(g),

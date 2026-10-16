@@ -161,6 +161,8 @@ class DocumentOut(ORM):
     partner_name: str | None
     uploaded_by: int
     uploaded_by_name: str | None
+    access: str = "own"  # own: 수정 가능 / shared: 공유받음(읽기) / domain: 도메인 권한으로 열람(읽기)
+    shared_with: list[str] = []  # 공유한 조직 이름 (가이드 공유)
     source_type: str
     url: str | None
     page_count: int | None
@@ -578,6 +580,11 @@ class EventOut(BaseModel):
 class AccessRequestIn(BaseModel):
     reason: str = Field(min_length=1)
     days: int = Field(default=30, ge=1, le=365)
+    # 도메인 권한 요청 화면: 요청 일자와 신청자 정보 (가입 정보로 미리 채우고 고칠 수 있음)
+    request_date: str | None = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    requester_name: str | None = Field(None, max_length=100)
+    requester_email: str | None = Field(None, max_length=255)
+    requester_company: str | None = Field(None, max_length=200)
 
 
 class AccessGrantOut(BaseModel):
@@ -588,6 +595,10 @@ class AccessGrantOut(BaseModel):
     vendor_name: str
     reason: str
     requested_days: int
+    request_date: str | None = None
+    requester_name: str | None = None
+    requester_email: str | None = None
+    requester_company: str | None = None
     status: str
     grant_type: str | None
     active: bool

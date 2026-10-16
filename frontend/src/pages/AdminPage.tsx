@@ -163,9 +163,9 @@ function AccessRequests() {
   const revoke = useMutation({ mutationFn: (id: number) => api(`/admin/access-requests/${id}/revoke`, { method: "POST" }), onSuccess: refresh });
 
   return (
-    <section className="card">
+    <section className="card" id="access-requests" style={{ scrollMarginTop: 80 }}>
       <div className="summary-head">
-        <h2 style={{ margin: 0 }}>다른 도메인 권한 신청</h2>
+        <h2 style={{ margin: 0 }}>도메인 권한 요청 승인</h2>
         <label className="check"><input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} />처리한 신청도 보기</label>
       </div>
       <p className="muted">
@@ -182,7 +182,7 @@ function AccessRequests() {
                 <tr key={g.id}>
                   <td>
                     <strong>{g.user.name}</strong> <span className="muted">{g.user.partner_name} → {g.vendor_name}</span>
-                    <div className="muted">사유: {g.reason}</div>
+                    <div className="muted">요청 목적: {g.reason}{g.request_date ? ` · 요청 일자 ${g.request_date}` : ""}</div>
                   </td>
                   <td>
                     <span className={`badge ${g.active ? "approved" : g.status}`}>
@@ -220,9 +220,12 @@ function AccessRequestRow({ grant, onDone }: { grant: AccessGrant; onDone: () =>
   return (
     <tr>
       <td>
-        <strong>{grant.user.name}</strong> <span className="muted">{grant.user_email}</span>
-        <div className="muted">{grant.user.partner_name} → <strong>{grant.vendor_name}</strong> · {new Date(grant.created_at).toLocaleDateString()}</div>
-        <div>사유: {grant.reason}</div>
+        <strong>{grant.requester_name ?? grant.user.name}</strong> <span className="muted">{grant.requester_email ?? grant.user_email}</span>
+        <div className="muted">
+          {grant.requester_company ?? grant.user.partner_name} → <strong>{grant.vendor_name}</strong> · 신청 {new Date(grant.created_at).toLocaleDateString()}
+          {grant.request_date && ` · 요청 일자 ${grant.request_date}`}
+        </div>
+        <div>요청 목적: {grant.reason}</div>
         {decide.error && <div className="error">{decide.error.message}</div>}
       </td>
       <td style={{ width: 260 }}>

@@ -108,7 +108,59 @@ def test_download_formats_delete_and_filters(client, tmp_path: Path):
     assert [d["id"] for d in listed] == [doc["id"]] and listed[0]["partner_name"] == "다운로드파트너"
     assert client.get(f"/api/documents?uploaded_by={me_id + 999}", headers=admin).json() == []
 
-    # 삭제는 플랫폼 관리자만
-    assert client.delete(f"/api/documents/{doc['id']}", headers=user).status_code == 403
+    # 삭제는 올린 사람 또는 플랫폼 관리자만 (같은 회사 동료는 불가)
+    coworker = _signup_and_approve(client, admin, "dl2@d.example.com", partner["id"])
+    assert client.delete(f"/api/documents/{doc['id']}", headers=coworker).status_code == 403
     assert client.delete(f"/api/documents/{doc['id']}", headers=admin).status_code == 204
     assert client.get(f"/api/documents/{doc['id']}", headers=admin).status_code == 404
+
+
+
+def test_share_and_domain_access(client, tmp_path: Path):
+    """가이드 공유(다른 조직 체크 → 읽기 가능), 도메인 권한 승인 → 그 벤더의 다른 조직 문서 열람, 읽기 전용."""
+    admin = login(client, *ADMIN)
+    owner_partner, vendor = _partner_with_vendor(client, admin, "공유원본사", "DocShareVendor")
+    other_partner, _ = _partner_with_vendor(client, admin, "공유받는사", "DocShareOtherVendor")
+    third_partner, _ = _partner_with_vendor(client, admin, "제3사", "DocShareThirdVendor")
+    owner = _signup_and_approve(client, admin, "share-o@s.example.com", owner_partner["id"])
+    other = _signup_and_approve(client, admin, "share-x@s.example.com", other_partner["id"])
+    third = _signup_and_approve(client, admin, "share-t@s.example.com", third_partner["id"])
+    src = tmp_path / "v.docx"
+    _make_vendor_docx(src)
+    with src.open("rb") as f:
+        doc = client.post("/api/documents", data={"vendor_id": vendor["id"], "title": "공유 가이드"}, files={"file": ("v.docx", f)}, headers=owner).json()
+    run_pending_jobs()
+
+    # 공유 전에는 다른 조직이 볼 수 없다
+    assert client.get(f"/api/documents/{doc['id']}", headers=other).status_code == 404
+    orgs = client.get("/api/organizations", headers=owner).json()
+    assert {"공유받는사", "제3사"} <= {o["name"] for o in orgs}
+    # 공유 범위는 올린 사람만 정한다
+    assert client.put(f"/api/documents/{doc['id']}/shares", json={"partner_ids": [other_partner["id"]]}, headers=other).status_code == 404
+    r = client.put(f"/api/documents/{doc['id']}/shares", json={"partner_ids": [other_partner["id"], third_partner["id"]]}, headers=owner)
+    assert r.json()["shared_with"] == ["공유받는사", "제3사"]
+    # 공유받은 조직: 목록·상세·다운로드는 되지만 요약·삭제는 안 된다 (읽기 전용)
+    mine = client.get("/api/documents?shared_to_me=true", headers=other).json()
+    assert [d["id"] for d in mine] == [doc["id"]] and mine[0]["access"] == "shared"
+    assert client.get(f"/api/documents/{doc['id']}/download?format=original", headers=other).status_code == 200
+    assert client.post(f"/api/documents/{doc['id']}/guides", json={"target_language": "ko"}, headers=other).status_code == 404
+    assert client.delete(f"/api/documents/{doc['id']}", headers=other).status_code == 403
+    # 공유를 하나 빼면 그 조직은 다시 못 본다
+    client.put(f"/api/documents/{doc['id']}/shares", json={"partner_ids": [other_partner["id"]]}, headers=owner)
+    assert client.get(f"/api/documents/{doc['id']}", headers=third).status_code == 404
+
+    # 도메인 권한 요청(신청자 정보 포함) → 관리자 승인 → 그 벤더의 다른 조직 문서 열람
+    r = client.post(
+        f"/api/community/{vendor['id']}/access-requests",
+        json={"reason": "고객 제안 검토", "request_date": "2026-10-20", "requester_name": "제3 담당", "requester_company": "제3사"},
+        headers=third,
+    )
+    assert r.status_code == 201 and r.json()["request_date"] == "2026-10-20" and r.json()["requester_name"] == "제3 담당"
+    assert r.json()["requester_email"] == "share-t@s.example.com"  # 비우면 가입 정보로
+    client.post(f"/api/admin/access-requests/{r.json()['id']}/decision", json={"approve": True, "grant_type": "read", "days": 30}, headers=admin)
+    listed = client.get(f"/api/documents?vendor_id={vendor['id']}", headers=third).json()
+    assert [d["id"] for d in listed] == [doc["id"]] and listed[0]["access"] == "domain"
+    assert client.get(f"/api/documents/{doc['id']}", headers=third).status_code == 200
+
+    # 올린 사람은 직접 삭제할 수 있다
+    assert client.delete(f"/api/documents/{doc['id']}", headers=owner).status_code == 204

@@ -63,6 +63,8 @@ export interface DocumentSummary {
   partner_name: string | null;
   uploaded_by: number;
   uploaded_by_name: string | null;
+  access: "own" | "shared" | "domain";
+  shared_with: string[];
   source_type: "pdf" | "docx" | "pptx" | "url";
   url: string | null;
   page_count: number | null;
@@ -378,6 +380,10 @@ export interface AccessGrant {
   vendor_name: string;
   reason: string;
   requested_days: number;
+  request_date: string | null;
+  requester_name: string | null;
+  requester_email: string | null;
+  requester_company: string | null;
   status: "pending" | "approved" | "rejected" | "revoked";
   grant_type: "read" | "member" | null;
   active: boolean;

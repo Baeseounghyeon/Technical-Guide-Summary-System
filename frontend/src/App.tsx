@@ -13,11 +13,12 @@ import PostPage from "./pages/PostPage";
 import DocumentPage from "./pages/DocumentPage";
 import DocumentsPage, { RegisteredDocumentsPage } from "./pages/DocumentsPage";
 import GuidePage from "./pages/GuidePage";
-import GuidesPage from "./pages/GuidesPage";
+import GuidesPage, { OrgTypePage, RegisteredTypePage } from "./pages/GuidesPage";
 import LoginPage from "./pages/LoginPage";
 import PartnerGuidePage from "./pages/PartnerGuidePage";
 import QuotesPage from "./pages/QuotesPage";
-import { MyRequestsPage, OrgGuidesPage } from "./pages/RequestsPages";
+import { ApprovalsPage, DomainRequestPage, MyRequestsPage, OrgGuidesPage } from "./pages/RequestsPages";
+import GuideSharePage from "./pages/GuideSharePage";
 import NotificationBell from "./NotificationBell";
 import SettingsPage from "./pages/SettingsPage";
 import SharedPage from "./pages/SharedPage";
@@ -32,10 +33,18 @@ export default function App() {
       <Route path="/" element={<Protected><DashboardPage /></Protected>} />
       <Route path="/documents" element={<Protected><DocumentsPage /></Protected>} />
       <Route path="/documents/registered" element={<Protected><RegisteredDocumentsPage /></Protected>} />
-      <Route path="/my-requests" element={<Protected><MyRequestsPage /></Protected>} />
+      <Route path="/my-requests" element={<Navigate to="/requests" replace />} />
+      <Route path="/requests" element={<Protected><MyRequestsPage /></Protected>} />
+      <Route path="/requests/approvals" element={<Protected><ApprovalsPage /></Protected>} />
+      <Route path="/requests/domain" element={<Protected><DomainRequestPage /></Protected>} />
+      <Route path="/specs" element={<Protected><RegisteredTypePage key="spec" docType="spec" /></Protected>} />
+      <Route path="/specs/org" element={<Protected><OrgTypePage key="spec-org" docType="spec" /></Protected>} />
+      <Route path="/brochures" element={<Protected><RegisteredTypePage key="brochure" docType="brochure" /></Protected>} />
+      <Route path="/brochures/org" element={<Protected><OrgTypePage key="brochure-org" docType="brochure" /></Protected>} />
       <Route path="/documents/:id" element={<Protected><DocumentPage /></Protected>} />
       <Route path="/guides" element={<Protected><GuidesPage /></Protected>} />
       <Route path="/guides/org" element={<Protected><OrgGuidesPage /></Protected>} />
+      <Route path="/guides/share" element={<Protected><GuideSharePage /></Protected>} />
       <Route path="/guides/:id" element={<Protected><GuidePage /></Protected>} />
       <Route path="/partner-guides/:id" element={<Protected><PartnerGuidePage /></Protected>} />
       <Route path="/shared" element={<Protected><SharedPage /></Protected>} />
@@ -71,9 +80,12 @@ function Protected({ children, roles, sales }: { children: ReactNode; roles?: Ro
         <nav>
           <NavLink to="/" end>홈</NavLink>
           <DocsMenu />
+          <TypeMenu base="/specs" label="규격서" />
           {!isSales && <GuidesMenu />}
           {(isSales || isAdmin) && <NavLink to="/quotes">견적서</NavLink>}
+          <TypeMenu base="/brochures" label="브로슈어" />
           <NavLink to="/community">커뮤니티</NavLink>
+          <RequestsMenu isAdmin={isAdmin} />
           {SETTINGS_ROLES.includes(me.role) && (!isSales || isAdmin) && <NavLink to="/settings">설정</NavLink>}
           {me.role === "platform_admin" && <NavLink to="/admin">관리자</NavLink>}
         </nav>
@@ -91,26 +103,47 @@ function Protected({ children, roles, sales }: { children: ReactNode; roles?: Ro
 
 type MenuItem = { key: string; label: string; to: string; active: boolean };
 
-/** 상단 '문서' 메뉴: 마우스를 올리면 규격서·기술 가이드·브로슈어가 펼쳐진다 (누르면 문서 화면). */
+/** 상단 '문서' 메뉴: 누르면 문서 등록, 마우스를 올리면 문서 등록·등록한 문서. */
 function DocsMenu() {
   const { pathname } = useLocation();
   const items = [
     { key: "upload", label: "문서 등록", to: "/documents", active: pathname === "/documents" },
     { key: "registered", label: "등록한 문서", to: "/documents/registered", active: pathname === "/documents/registered" },
-    { key: "requests", label: "내 요청 사항", to: "/my-requests", active: pathname === "/my-requests" },
   ];
-  return <HoverMenu to="/documents" label="문서" items={items} alsoActive={pathname === "/my-requests"} />;
+  return <HoverMenu to="/documents" label="문서" items={items} />;
 }
 
-/** 상단 '가이드' 메뉴: 누르면 등록한 가이드, 마우스를 올리면 등록한 가이드·조직 요청 가이드·가이드 공유. */
-function GuidesMenu() {
+/** 상단 '규격서'·'브로슈어' 메뉴: 누르면 등록한 ○○, 마우스를 올리면 등록한 ○○·조직 요청 ○○. */
+function TypeMenu({ base, label }: { base: string; label: string }) {
   const { pathname } = useLocation();
   const items = [
+    { key: "registered", label: `등록한 ${label}`, to: base, active: pathname === base },
+    { key: "org", label: `조직 요청 ${label}`, to: `${base}/org`, active: pathname === `${base}/org` },
+  ];
+  return <HoverMenu to={base} label={label} items={items} />;
+}
+
+/** 상단 '가이드' 메뉴: 누르면 등록한 가이드, 마우스를 올리면 가이드 등록·등록한 가이드·조직 요청 가이드·가이드 공유. */
+function GuidesMenu() {
+  const { pathname, search } = useLocation();
+  const items = [
+    { key: "upload", label: "가이드 등록", to: "/documents?type=guide", active: pathname === "/documents" && search.includes("type=guide") },
     { key: "registered", label: "등록한 가이드", to: "/guides", active: pathname === "/guides" },
     { key: "org", label: "조직 요청 가이드", to: "/guides/org", active: pathname === "/guides/org" },
-    { key: "shared", label: "가이드 공유", to: "/shared", active: pathname === "/shared" },
+    { key: "share", label: "가이드 공유", to: "/guides/share", active: pathname === "/guides/share" },
   ];
   return <HoverMenu to="/guides" label="가이드" items={items} alsoActive={pathname === "/shared"} />;
+}
+
+/** 상단 '요청' 메뉴: 누르면 내 요청 사항, 마우스를 올리면 내 요청 사항·권한 승인·도메인 권한 요청(일반 사용자). */
+function RequestsMenu({ isAdmin }: { isAdmin: boolean }) {
+  const { pathname } = useLocation();
+  const items = [
+    { key: "mine", label: "내 요청 사항", to: "/requests", active: pathname === "/requests" },
+    { key: "approvals", label: "권한 승인", to: isAdmin ? "/admin#access-requests" : "/requests/approvals", active: pathname === "/requests/approvals" },
+    ...(isAdmin ? [] : [{ key: "domain", label: "도메인 권한 요청", to: "/requests/domain", active: pathname === "/requests/domain" }]),
+  ];
+  return <HoverMenu to="/requests" label="요청" items={items} />;
 }
 
 /** 마우스를 올리면 하위 메뉴가 펼쳐지는 상단 메뉴.
@@ -238,9 +271,9 @@ function UserMenu() {
               {isSales ? "견적서 로고·양식 변경" : "회사 로고·양식 변경"}
             </button>
           )}
-          <button className="dropdown-item" role="menuitem" onClick={() => go("/my-requests")}>내 요청 사항</button>
+          <button className="dropdown-item" role="menuitem" onClick={() => go("/requests")}>내 요청 사항</button>
           {me.role !== "platform_admin" && (
-            <button className="dropdown-item" role="menuitem" onClick={() => go("/community#access")}>다른 도메인 권한 신청</button>
+            <button className="dropdown-item" role="menuitem" onClick={() => go("/requests/domain")}>도메인 권한 요청</button>
           )}
           {me.role === "platform_admin" && (
             <button className="dropdown-item" role="menuitem" onClick={() => go("/admin")}>관리자 페이지</button>

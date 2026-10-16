@@ -80,9 +80,36 @@ def get_guide_for_user(db: Session, user: User, guide_id: int) -> Guide:
 
 
 def _can_see_document(db: Session, user: User, doc: SourceDocument) -> bool:
+    """수정·요약까지 할 수 있는 문서: 내 파트너사가 올린, 내 도메인의 문서."""
     if is_admin(user):
         return True
     return doc.partner_id == user.partner_id and doc.vendor_id in {v.id for v in accessible_vendors(db, user)}
+
+
+def granted_vendor_ids(db: Session, user: User) -> set[int]:
+    """도메인 권한 요청이 승인되어(기간 안) 다른 파트너사 문서까지 열람할 수 있는 벤더 도메인."""
+    now = utcnow()
+    grants = db.scalars(select(AccessGrant).where(AccessGrant.user_id == user.id, AccessGrant.status == GrantStatus.APPROVED))
+    return {g.vendor_id for g in grants if g.expires_at is None or as_utc(g.expires_at) > now}
+
+
+def document_access(db: Session, user: User, doc: SourceDocument) -> str | None:
+    """own: 수정 가능 / shared: 내 조직에 공유됨(읽기) / domain: 도메인 권한으로 열람(읽기) / None: 접근 불가."""
+    if _can_see_document(db, user, doc):
+        return "own"
+    if user.partner_id and any(s.partner_id == user.partner_id for s in doc.shares):
+        return "shared"
+    if doc.vendor_id in granted_vendor_ids(db, user):
+        return "domain"
+    return None
+
+
+def get_readable_document(db: Session, user: User, document_id: int) -> SourceDocument:
+    """보기·내려받기용: 공유받았거나 도메인 권한으로 열람하는 문서도 허용한다."""
+    doc = db.get(SourceDocument, document_id)
+    if doc is None or document_access(db, user, doc) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "문서를 찾을 수 없습니다.")
+    return doc
 
 
 # ---------- 커뮤니티 접근 (3단계) ----------

@@ -400,3 +400,4 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 table.table-resizable td :is(button, .badge) { white-space: nowrap; overflow-wrap: normal; }
 
 .icon-button.danger:hover:not(:disabled) { color: var(--danger); border-color: var(--danger); }
+.share-list { display: grid; gap: 8px; margin-top: 12px; max-height: 50vh; overflow: auto; }

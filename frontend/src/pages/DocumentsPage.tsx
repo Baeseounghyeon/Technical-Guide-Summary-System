@@ -8,19 +8,22 @@ import type { DocumentSummary } from "../types";
 
 const IN_PROGRESS = new Set(["uploaded", "parsing"]);
 
-/** 문서 등록: 벤더 문서 가져오기만 보여 준다. 올린 뒤에는 '등록한 문서'의 해당 종류 탭으로 간다. */
+/** 문서 등록: 문서 가져오기 양식만 보여 준다. 올린 뒤에는 '등록한 문서'의 해당 종류 탭으로 간다.
+ *  ?type=spec|guide|brochure 로 오면 등록할 종류를 미리 골라 둔다 (상단 메뉴의 '가이드 등록' 등). */
 export default function DocumentsPage() {
   const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const preset = (DOC_TYPES.some((t) => t.key === params.get("type")) ? params.get("type") : "guide") as DocTypeKey;
   return (
     <>
       <div className="page-header">
-        <h1>벤더 문서</h1>
+        <h1>문서 등록</h1>
         <p className="muted">
           벤더의 규격서·기술 가이드·브로슈어를 등록합니다. 기술 가이드는 목차를 분석한 뒤 요약할 수 있습니다. 올린 문서는{" "}
           <Link to="/documents/registered">등록한 문서</Link>에서 봅니다.
         </p>
       </div>
-      <UploadForm defaultType="guide" onUploaded={(type) => navigate(`/documents/registered?type=${type}`)} />
+      <UploadForm key={preset} defaultType={preset} onUploaded={(type) => navigate(`/documents/registered?type=${type}`)} />
     </>
   );
 }
@@ -102,8 +105,8 @@ export function uniqueOptions(docs: DocumentSummary[], pick: (d: DocumentSummary
 
 /** 문서 표 (문서 화면의 종류별 탭과 가이드 화면이 함께 쓴다). query 는 /documents 목록 API 의 검색 조건. */
 export function DocumentTable({
-  query, showGuideKind = false, showStatus = true,
-}: { query: string; showGuideKind?: boolean; showStatus?: boolean }) {
+  query, showGuideKind = false, showStatus = true, showDocType = false,
+}: { query: string; showGuideKind?: boolean; showStatus?: boolean; showDocType?: boolean }) {
   const { me } = useAuth();
   const isAdmin = me?.role === "platform_admin";
   const queryClient = useQueryClient();
@@ -120,6 +123,8 @@ export function DocumentTable({
   if (docs.isLoading) return <p className="muted">불러오는 중…</p>;
   if (docs.error) return <p className="error">{docs.error.message}</p>;
   if (!docs.data?.length) return <p className="muted">등록된 문서가 없습니다.</p>;
+  // 삭제는 관리자 또는 문서를 올린 사람만 (공유받거나 열람하는 문서는 읽기 전용)
+  const canDeleteAny = isAdmin || docs.data.some((d) => d.uploaded_by === me?.id);
   return (
     <div className="table-wrap">
       {remove.error && <p className="error">{remove.error.message}</p>}
@@ -128,17 +133,23 @@ export function DocumentTable({
         <thead>
           <tr>
             <th>문서 이름</th>
+            {showDocType && <th>문서 목적</th>}
             {showGuideKind && <th>가이드 종류</th>}
             <th>설명</th><th>벤더</th><th>등록자</th><th>등록 날짜</th><th>형식·분량</th>
             {showStatus && <th>상태</th>}
             <th>다운로드</th>
-            {isAdmin && <th>삭제</th>}
+            {canDeleteAny && <th>삭제</th>}
           </tr>
         </thead>
         <tbody>
           {docs.data.map((d) => (
             <tr key={d.id}>
-              <td><Link to={`/documents/${d.id}`}>{d.title ?? d.url ?? `문서 ${d.id}`}</Link></td>
+              <td>
+                <Link to={`/documents/${d.id}`}>{d.title ?? d.url ?? `문서 ${d.id}`}</Link>
+                {d.access === "shared" && <span className="badge granted" style={{ marginLeft: 6 }} title="다른 조직이 공유한 문서 (읽기 전용)">공유받음</span>}
+                {d.access === "domain" && <span className="badge granted" style={{ marginLeft: 6 }} title="도메인 권한으로 열람 (읽기 전용)">도메인 열람</span>}
+              </td>
+              {showDocType && <td style={{ whiteSpace: "nowrap" }}>{DOC_TYPES.find((t) => t.key === d.doc_type)?.label ?? "-"}</td>}
               {showGuideKind && (
                 <td style={{ whiteSpace: "nowrap" }}>{GUIDE_KINDS.find((k) => k.key === d.guide_kind)?.label ?? "-"}</td>
               )}
@@ -153,9 +164,9 @@ export function DocumentTable({
                   <DownloadIcon />
                 </button>
               </td>
-              {isAdmin && (
+              {canDeleteAny && (
                 <td>
-                  <button
+                  {(isAdmin || d.uploaded_by === me?.id) && <button
                     className="icon-button sm danger"
                     title="삭제"
                     aria-label={`${d.title ?? "문서"} 삭제`}
@@ -167,7 +178,7 @@ export function DocumentTable({
                     }
                   >
                     <TrashIcon />
-                  </button>
+                  </button>}
                 </td>
               )}
             </tr>
@@ -304,7 +315,6 @@ function UploadForm({ defaultType, onUploaded }: { defaultType: DocTypeKey; onUp
 
   return (
     <section className="card">
-      <h2>문서 가져오기</h2>
       {vendors.length === 0 ? (
         <p className="muted">접근 가능한 벤더 도메인이 없습니다. 관리자에게 도메인 지정을 요청하세요.</p>
       ) : (
