@@ -3,7 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..deps import accessible_vendors, get_active_user, user_permissions
+from ..deps import INACTIVE_MESSAGE, check_inactivity, accessible_vendors, get_active_user, user_permissions
 from ..models import User, UserStatus
 from ..schemas import LoginIn, MeOut, SignupIn, TokenOut, UserOut, VendorOut
 from ..security import create_access_token, hash_password, verify_password
@@ -37,8 +37,11 @@ def login(body: LoginIn, db: Session = Depends(get_db)) -> TokenOut:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "이메일 또는 비밀번호가 올바르지 않습니다.")
     if user.status == UserStatus.PENDING:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "관리자 승인 대기 중입니다.")
+    if user.status == UserStatus.SUSPENDED and user.suspended_reason == "inactive":
+        raise HTTPException(status.HTTP_403_FORBIDDEN, INACTIVE_MESSAGE)
     if user.status != UserStatus.ACTIVE:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "사용이 중지된 계정입니다.")
+    check_inactivity(db, user)  # 30일 넘게 접속하지 않았으면 여기서 정지된다
     return TokenOut(access_token=create_access_token(user.id))
 
 

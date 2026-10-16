@@ -419,3 +419,8 @@ table.table-resizable td :is(button, .badge) { white-space: nowrap; overflow-wra
 .filters .filter-link:hover { color: var(--accent); text-decoration: none; border-bottom-color: var(--border-strong); }
 .filters .filter-link.active { color: var(--accent); border-bottom-color: var(--accent); }
 a.stat-card { text-decoration: none; }
+
+/* 가이드 공유: 탭 줄 오른쪽의 공유 버튼 (탭과 같은 크기·글꼴) */
+.filters button.share-open { margin-left: auto; color: var(--accent); }
+.filters button.share-open:hover:not(:disabled) { border-bottom-color: var(--accent); }
+.share-form { display: grid; gap: 12px; margin-top: 12px; }

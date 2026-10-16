@@ -82,6 +82,8 @@ def approve_user(user_id: int, body: ApproveIn, db: Session = Depends(get_db)) -
     if body.track is not None:
         user.track = body.track
     user.status = UserStatus.ACTIVE
+    user.suspended_reason = None
+    user.last_seen_at = utcnow()  # 승인 직후부터 미접속 기간을 센다
     db.commit()
     return user
 
@@ -105,6 +107,20 @@ def delete_user(user_id: int, admin: User = Depends(require_platform_admin), db:
 def suspend_user(user_id: int, db: Session = Depends(get_db)) -> User:
     user = _get_or_404(db, User, user_id)
     user.status = UserStatus.SUSPENDED
+    user.suspended_reason = "manual"
+    db.commit()
+    return user
+
+
+@router.post("/users/{user_id}/reactivate", response_model=UserOut)
+def reactivate_user(user_id: int, db: Session = Depends(get_db)) -> User:
+    """정지 해제: 30일 미접속이나 관리자 정지로 막힌 계정을 다시 쓸 수 있게 한다."""
+    user = _get_or_404(db, User, user_id)
+    if user.status != UserStatus.SUSPENDED:
+        raise HTTPException(status.HTTP_409_CONFLICT, "정지된 계정이 아닙니다.")
+    user.status = UserStatus.ACTIVE
+    user.suspended_reason = None
+    user.last_seen_at = utcnow()
     db.commit()
     return user
 

@@ -8,14 +8,14 @@ import { DocumentTable } from "./DocumentsPage";
 
 
 
-/** 내 요청 사항: 내가 문서 등록에서 올린(작업을 요청한) 문서. 상단 '요청' 메뉴와 사용자 메뉴에서 같은 화면으로 온다. */
+/** 작업 내역: 내가 문서 등록에서 올린 문서. 상단 '요청' 메뉴와 사용자 메뉴에서 같은 화면으로 온다. */
 export function MyRequestsPage() {
   const { me } = useAuth();
   return (
     <>
       <div className="page-header">
-        <h1>내 요청 사항</h1>
-        <p className="muted">내가 등록한 문서입니다. 문서 목적(규격서·가이드·브로슈어)과 등록 일자를 확인하고 내려받거나 삭제할 수 있습니다.</p>
+        <h1>작업 내역</h1>
+        <p className="muted">내가 등록한 문서입니다. 문서 목적(규격서·가이드·견적서·브로슈어)과 등록 일자를 확인하고 내려받거나 삭제할 수 있습니다.</p>
       </div>
       <section className="card">
         {me && <DocumentTable query={`uploaded_by=${me.id}`} showDocType showStatus={false} />}

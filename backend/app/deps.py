@@ -5,7 +5,7 @@
 - 그 외 사용자는 자기 파트너사가 지원하는 벤더 도메인 안에서, 자기 파트너사 문서만 본다.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
@@ -38,9 +38,30 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     return user
 
 
-def get_active_user(user: User = Depends(get_current_user)) -> User:
+INACTIVE_DAYS = 30  # 이 기간 넘게 접속하지 않으면 정지 (관리자 제외)
+INACTIVE_MESSAGE = f"{INACTIVE_DAYS}일 이상 접속하지 않아 사용이 정지된 계정입니다. 관리자에게 정지 해제를 요청하세요."
+
+
+def check_inactivity(db: Session, user: User) -> None:
+    """마지막 접속이 30일을 넘었으면 정지하고 403. 아니면 마지막 접속 시각을 갱신한다 (10분에 한 번만 기록)."""
+    now = utcnow()
+    last = as_utc(user.last_seen_at) if user.last_seen_at else None
+    if last and not is_admin(user) and now - last > timedelta(days=INACTIVE_DAYS):
+        user.status = UserStatus.SUSPENDED
+        user.suspended_reason = "inactive"
+        db.commit()
+        raise HTTPException(status.HTTP_403_FORBIDDEN, INACTIVE_MESSAGE)
+    if last is None or now - last > timedelta(minutes=10):
+        user.last_seen_at = now
+        db.commit()
+
+
+def get_active_user(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> User:
     if user.status != UserStatus.ACTIVE:
+        if user.status == UserStatus.SUSPENDED and user.suspended_reason == "inactive":
+            raise HTTPException(status.HTTP_403_FORBIDDEN, INACTIVE_MESSAGE)
         raise HTTPException(status.HTTP_403_FORBIDDEN, "승인된 계정만 사용할 수 있습니다.")
+    check_inactivity(db, user)
     return user
 
 
@@ -133,7 +154,9 @@ def document_access(db: Session, user: User, doc: SourceDocument) -> str | None:
         return None
     if _can_see_document(db, user, doc):
         return "own"
-    if user.partner_id and any(s.partner_id == user.partner_id for s in doc.shares):
+    if any(s.user_id == user.id for s in doc.user_shares):
+        return "shared"
+    if user.partner_id and any(s.partner_id == user.partner_id for s in doc.shares):  # 예전 조직 단위 공유
         return "shared"
     if doc.vendor_id in granted_vendor_ids(db, user):
         return "domain"

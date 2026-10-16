@@ -38,6 +38,11 @@ function Members() {
     mutationFn: (id: number) => api(`/admin/users/${id}`, { method: "DELETE" }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin"] }),
   });
+  // 30일 미접속 등으로 정지된 계정을 다시 쓸 수 있게 한다
+  const reactivate = useMutation({
+    mutationFn: (id: number) => api(`/admin/users/${id}/reactivate`, { method: "POST" }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin"] }),
+  });
   const keyword = q.trim().toLowerCase();
   const trackOf = (u: AdminUser): Track => u.track ?? "engineer";
   const counts = { engineer: 0, sales: 0 };
@@ -77,6 +82,8 @@ function Members() {
       </div>
       <p className="muted">{shown.length}명</p>
       {remove.error && <p className="error">{remove.error.message}</p>}
+      {reactivate.error && <p className="error">{reactivate.error.message}</p>}
+      <p className="muted">관리자를 제외한 사용자는 30일 넘게 접속하지 않으면 자동으로 정지됩니다. 정지된 계정은 '정지 해제'를 눌러야 다시 쓸 수 있습니다.</p>
       <div className="table-wrap">
         <table style={{ minWidth: 900 }}>
           <thead>
@@ -111,10 +118,17 @@ function Members() {
                     </div>
                   )}
                 </td>
-                <td><span className={`badge ${u.status}`}>{USER_STATUS[u.status]}</span></td>
+                <td style={{ whiteSpace: "nowrap" }}>
+                  <span className={`badge ${u.status}`}>{USER_STATUS[u.status]}</span>
+                  {u.status === "suspended" && u.suspended_reason === "inactive" && <div className="muted">30일 미접속</div>}
+                  {u.last_seen_at && <div className="muted" title="마지막 접속">{new Date(u.last_seen_at).toLocaleDateString()} 접속</div>}
+                </td>
                 <td style={{ whiteSpace: "nowrap" }}>
                   {editing !== u.id && (
                     <div className="actions">
+                      {u.status === "suspended" && (
+                        <button className="primary" disabled={reactivate.isPending} onClick={() => reactivate.mutate(u.id)}>정지 해제</button>
+                      )}
                       <button className={u.status === "pending" ? "primary" : "link"} onClick={() => setEditing(u.id)}>
                         {u.status === "pending" ? "승인하기" : "수정"}
                       </button>

@@ -24,7 +24,7 @@ from ..deps import (
     require_platform_admin,
 )
 from ..catalog import PRODUCT_CATALOG, validate_product
-from ..models import DocStatus, DocType, DocumentShare, GuideKind, JobKind, Partner, Section, SourceDocument, User, Vendor, utcnow
+from ..models import DocStatus, DocType, DocumentShare, DocumentUserShare, GuideKind, JobKind, Partner, Section, SourceDocument, User, UserStatus, Vendor, utcnow
 from ..schemas import UTCDateTime
 from ..schemas import DocumentDetail, DocumentOut, GuideBrief, SectionOut, SectionPatch
 from ..services.jobs import enqueue
@@ -40,7 +40,7 @@ router = APIRouter(prefix="/api", tags=["원본 문서"])
 def create_document(
     vendor_id: int = Form(...),
     title: str | None = Form(None),
-    doc_type: Literal["spec", "guide", "brochure"] = Form("guide"),
+    doc_type: Literal["spec", "guide", "quote", "brochure"] = Form("guide"),
     guide_kind: Literal["technical", "troubleshooting"] = Form("technical"),
     product: str | None = Form(None),
     product_detail: str | None = Form(None),
@@ -100,7 +100,7 @@ def create_document(
 @router.get("/documents", response_model=list[DocumentOut])
 def list_documents(
     vendor_id: int | None = None,
-    doc_type: Literal["spec", "guide", "brochure"] | None = None,
+    doc_type: Literal["spec", "guide", "quote", "brochure"] | None = None,
     guide_kind: Literal["technical", "troubleshooting"] | None = None,
     partner_id: int | None = None,
     uploaded_by: int | None = None,
@@ -117,9 +117,17 @@ def list_documents(
         query = query.where(SourceDocument.product == product)
     if product_detail:
         query = query.where(SourceDocument.product_detail == product_detail)
-    shared_ids = select(DocumentShare.document_id).where(DocumentShare.partner_id == user.partner_id)
+    user_shared_ids = select(DocumentUserShare.document_id).where(DocumentUserShare.user_id == user.id)
+    org_shared_ids = select(DocumentShare.document_id).where(DocumentShare.partner_id == user.partner_id)  # 예전 조직 단위 공유
+    shared_ids = user_shared_ids.union(org_shared_ids)
     if shared_to_me:
-        query = query.where(SourceDocument.id.in_(shared_ids), SourceDocument.partner_id.is_distinct_from(user.partner_id))
+        query = query.where(
+            or_(
+                SourceDocument.id.in_(user_shared_ids),
+                SourceDocument.id.in_(org_shared_ids) & SourceDocument.partner_id.is_distinct_from(user.partner_id),
+            ),
+            SourceDocument.uploaded_by != user.id,
+        )
     elif not is_admin(user):
         vendor_ids = [v.id for v in accessible_vendors(db, user)]
         query = query.where(
@@ -189,7 +197,7 @@ def _document_out(doc: SourceDocument, access: str = "own") -> DocumentOut:
         uploaded_by=doc.uploaded_by,
         uploaded_by_name=doc.uploader.name if doc.uploader else None,
         access=access,
-        shared_with=sorted(s.partner.name for s in doc.shares),
+        shared_with=sorted(s.partner.name for s in doc.shares) + sorted(f"{s.partner.name} · {s.user.name}" for s in doc.user_shares),
         source_type=doc.source_type,
         url=doc.url,
         page_count=doc.page_count,
@@ -213,7 +221,7 @@ def _section_out(s: Section) -> SectionOut:
     )
 
 
-DOC_TYPE_LABELS = {"spec": "규격서", "guide": "가이드", "brochure": "브로슈어"}
+DOC_TYPE_LABELS = {"spec": "규격서", "guide": "가이드", "quote": "견적서", "brochure": "브로슈어"}
 DownloadFormat = Literal["original", "docx", "pptx", "xlsx", "pdf"]
 _UNSAFE_NAME = re.compile(r'[\\/:*?"<>|]')  # 파일 이름에 쓸 수 없는 문자
 
@@ -251,6 +259,8 @@ def delete_document(document_id: int, user: User = Depends(get_active_user), db:
     doc = get_readable_document(db, user, document_id)
     if not can_trash(user, doc):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "같은 조직의 문서만 삭제할 수 있습니다.")
+    # 등록 권한이 없는 종류(등록된 ○○)는 내려받기만 한다
+    require_permission(db, user, doc.doc_type or DocType.GUIDE)
     doc.deleted_at, doc.deleted_by = utcnow(), user.id
     db.commit()
 
@@ -346,3 +356,114 @@ def set_shares(document_id: int, body: ShareIn, user: User = Depends(get_active_
     db.commit()
     db.refresh(doc)
     return _document_out(doc, document_access(db, user, doc) or "own")
+
+
+# ---------- 가이드 공유 (사용자 단위): 조직 → 사용자 ----------
+
+
+class UserShareIn(BaseModel):
+    document_id: int
+    partner_id: int
+    user_ids: list[int]
+
+
+class UserShareOut(BaseModel):
+    id: int
+    document_id: int
+    document_title: str | None
+    doc_type: str
+    vendor_name: str
+    product: str | None
+    product_detail: str | None
+    partner_id: int
+    partner_name: str
+    user_id: int
+    user_name: str
+    user_email: str
+    shared_by_name: str | None
+    created_at: UTCDateTime
+
+
+def _user_share_out(s: DocumentUserShare) -> UserShareOut:
+    d = s.document
+    return UserShareOut(
+        id=s.id,
+        document_id=d.id,
+        document_title=d.title,
+        doc_type=d.doc_type or DocType.GUIDE,
+        vendor_name=d.vendor.name,
+        product=d.product,
+        product_detail=d.product_detail,
+        partner_id=s.partner_id,
+        partner_name=s.partner.name,
+        user_id=s.user_id,
+        user_name=s.user.name,
+        user_email=s.user.email,
+        shared_by_name=s.sharer.name if s.sharer else None,
+        created_at=s.created_at,
+    )
+
+
+@router.get("/organizations/{partner_id}/users")
+def list_organization_users(partner_id: int, _user: User = Depends(get_active_user), db: Session = Depends(get_db)) -> list[dict]:
+    """공유 대상으로 고를 수 있는 그 조직의 사용자 (승인된 계정만, 이름·메일)."""
+    users = db.scalars(
+        select(User).where(User.partner_id == partner_id, User.status == UserStatus.ACTIVE).order_by(User.name)
+    )
+    return [{"id": u.id, "name": u.name, "email": u.email} for u in users]
+
+
+@router.get("/user-shares", response_model=list[UserShareOut])
+def list_user_shares(user: User = Depends(get_active_user), db: Session = Depends(get_db)) -> list[UserShareOut]:
+    """내가 공유한 기록 (내가 올린 문서의 공유 + 내가 공유한 것). 관리자는 전체."""
+    query = (
+        select(DocumentUserShare)
+        .join(SourceDocument, SourceDocument.id == DocumentUserShare.document_id)
+        .where(SourceDocument.deleted_at.is_(None))
+        .order_by(DocumentUserShare.created_at.desc())
+    )
+    if not is_admin(user):
+        query = query.where(or_(SourceDocument.uploaded_by == user.id, DocumentUserShare.shared_by == user.id))
+    return [_user_share_out(s) for s in db.scalars(query)]
+
+
+@router.post("/user-shares", response_model=list[UserShareOut], status_code=status.HTTP_201_CREATED)
+def create_user_shares(body: UserShareIn, user: User = Depends(get_active_user), db: Session = Depends(get_db)) -> list[UserShareOut]:
+    """문서를 조직의 사용자에게 공유한다. 조직과 사용자를 모두 골라야 하며, 사용자는 그 조직 소속이어야 한다."""
+    doc = get_readable_document(db, user, body.document_id)
+    if not (is_admin(user) or doc.uploaded_by == user.id):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "문서를 올린 사람이나 관리자만 공유할 수 있습니다.")
+    if db.get(Partner, body.partner_id) is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "조직을 선택하세요.")
+    if not body.user_ids:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "공유할 사용자를 선택하세요.")
+    targets = list(
+        db.scalars(
+            select(User).where(
+                User.id.in_(body.user_ids), User.partner_id == body.partner_id, User.status == UserStatus.ACTIVE
+            )
+        )
+    )
+    if len(targets) != len(set(body.user_ids)):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "선택한 조직에 속하지 않은 사용자가 포함되어 있습니다.")
+    have = {s.user_id for s in doc.user_shares}
+    created = [
+        DocumentUserShare(document_id=doc.id, partner_id=body.partner_id, user_id=t.id, shared_by=user.id)
+        for t in targets
+        if t.id not in have and t.id != doc.uploaded_by
+    ]
+    if not created:
+        raise HTTPException(status.HTTP_409_CONFLICT, "선택한 사용자에게 이미 공유된 문서입니다.")
+    db.add_all(created)
+    db.commit()
+    return [_user_share_out(s) for s in created]
+
+
+@router.delete("/user-shares/{share_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_user_share(share_id: int, user: User = Depends(get_active_user), db: Session = Depends(get_db)) -> None:
+    """공유 해제. 공유한 사람, 문서를 올린 사람, 관리자만."""
+    share = db.get(DocumentUserShare, share_id)
+    if share is None or not (is_admin(user) or share.shared_by == user.id or share.document.uploaded_by == user.id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "공유 기록을 찾을 수 없습니다.")
+    db.delete(share)
+    db.commit()

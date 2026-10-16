@@ -24,7 +24,7 @@ export default function DocumentsPage() {
       <div className="page-header">
         <h1>문서 등록</h1>
         <p className="muted">
-          벤더의 규격서·기술 가이드·브로슈어를 등록합니다. 기술 가이드는 목차를 분석한 뒤 요약할 수 있습니다. 올린 문서는{" "}
+          벤더의 규격서·기술 가이드·견적서·브로슈어를 등록합니다. 기술 가이드는 목차를 분석한 뒤 요약할 수 있습니다. 올린 문서는{" "}
           <Link to="/documents/registered">등록한 문서</Link>에서 봅니다.
         </p>
       </div>
@@ -64,7 +64,7 @@ export function RegisteredDocumentsPage() {
       <div className="page-header">
         <h1>등록한 문서</h1>
         <p className="muted">
-          내가 문서 등록에서 올린 문서를 종류별로 봅니다. 다른 사람이 올린 문서는 상단의 규격서·가이드·브로슈어 메뉴에서 확인하세요.
+          내가 문서 등록에서 올린 문서를 종류별로 봅니다. 다른 사람이 올린 문서는 상단의 규격서·가이드·견적서·브로슈어 메뉴에서 확인하세요.
           새 문서는 <Link to="/documents">문서 등록</Link>에서 올리세요.
         </p>
       </div>
@@ -118,8 +118,8 @@ export function uniqueOptions(docs: DocumentSummary[], pick: (d: DocumentSummary
 
 /** 문서 표 (문서 화면의 종류별 탭과 가이드 화면이 함께 쓴다). query 는 /documents 목록 API 의 검색 조건. */
 export function DocumentTable({
-  query, showGuideKind = false, showStatus = true, showDocType = false,
-}: { query: string; showGuideKind?: boolean; showStatus?: boolean; showDocType?: boolean }) {
+  query, showGuideKind = false, showStatus = true, showDocType = false, readOnly = false,
+}: { query: string; showGuideKind?: boolean; showStatus?: boolean; showDocType?: boolean; readOnly?: boolean }) {
   const { me } = useAuth();
   const isAdmin = me?.role === "platform_admin";
   const queryClient = useQueryClient();
@@ -137,7 +137,7 @@ export function DocumentTable({
   if (docs.error) return <p className="error">{docs.error.message}</p>;
   if (!docs.data?.length) return <p className="muted">등록된 문서가 없습니다.</p>;
   // 삭제(휴지통으로 이동)는 관리자 또는 같은 조직 문서만 (공유받거나 도메인 권한으로 보는 문서는 읽기 전용)
-  const canDelete = (d: DocumentSummary) => isAdmin || (d.access === "own" && d.partner_id != null && d.partner_id === me?.partner_id);
+  const canDelete = (d: DocumentSummary) => !readOnly && (isAdmin || (d.access === "own" && d.partner_id != null && d.partner_id === me?.partner_id));
   const canDeleteAny = docs.data.some(canDelete);
   return (
     <div className="table-wrap">

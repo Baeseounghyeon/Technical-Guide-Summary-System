@@ -3,136 +3,200 @@ import { Link, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { useAuth } from "../auth";
+import { productLabel } from "../ProductSelect";
 import type { DocumentSummary } from "../types";
 import { DocumentTable } from "./DocumentsPage";
 
 type Org = { id: number; name: string };
+type OrgUser = { id: number; name: string; email: string };
+interface UserShare {
+  id: number;
+  document_id: number;
+  document_title: string | null;
+  vendor_name: string;
+  product: string | null;
+  product_detail: string | null;
+  partner_name: string;
+  user_name: string;
+  user_email: string;
+  shared_by_name: string | null;
+  created_at: string;
+}
 
-/** 가이드 공유: 내가 등록한 가이드를 어느 조직까지 공유할지 정한다 (여러 조직 선택).
- *  공유받은 조직은 도메인 권한 요청 없이 그 가이드를 보고 내려받을 수 있다. */
+/** 가이드 공유: 상단 '가이드 공유' 버튼으로 가이드 → 조직 → 사용자를 골라 공유한다.
+ *  조직과 사용자를 모두 골라야 공유되며, 고른 사용자만 도메인 권한 요청 없이 그 가이드를 보고 내려받는다. */
 export default function GuideSharePage() {
   const [params, setParams] = useSearchParams();
   const tab = params.get("tab") === "received" ? "received" : "mine";
+  const [sharing, setSharing] = useState(false);
   return (
     <>
       <div className="page-header">
         <h1>가이드 공유</h1>
         <p className="muted">
-          내가 등록한 가이드를 공유할 조직을 고릅니다(여러 개 선택 가능). 공유받은 조직은 도메인 권한 요청 없이 그 가이드를 보고 내려받을 수 있습니다.
+          내가 등록한 가이드를 다른 조직의 사용자에게 공유합니다. 조직을 고른 뒤 그 조직의 사용자까지 골라야 공유되며, 공유받은 사용자는 도메인 권한 요청 없이
+          그 가이드를 보고 내려받을 수 있습니다.
         </p>
       </div>
       <div className="filters">
         <button className={tab === "mine" ? "active" : ""} onClick={() => setParams({})}>공유한 가이드</button>
         <button className={tab === "received" ? "active" : ""} onClick={() => setParams({ tab: "received" })}>공유받은 가이드</button>
+        <button className="share-open" onClick={() => setSharing(true)}>가이드 공유</button>
       </div>
-      {tab === "mine" ? <MySharedGuides /> : (
+      {tab === "mine" ? <MyShares /> : (
         <section className="card">
           <h2 className="section-title">공유받은 가이드</h2>
           <DocumentTable query="doc_type=guide&shared_to_me=true" showGuideKind showStatus={false} />
         </section>
       )}
+      {sharing && (
+        <ShareDialog
+          onClose={() => setSharing(false)}
+          onShared={() => {
+            setSharing(false);
+            setParams({});
+          }}
+        />
+      )}
     </>
   );
 }
 
-function MySharedGuides() {
-  const { me } = useAuth();
-  const [editing, setEditing] = useState<DocumentSummary | null>(null);
-  const docs = useQuery({
-    queryKey: ["documents", `doc_type=guide&uploaded_by=${me?.id}`],
-    queryFn: () => api<DocumentSummary[]>(`/documents?doc_type=guide&uploaded_by=${me?.id}`),
-    enabled: !!me,
+/** 공유한 가이드: 공유 기록(가이드 · 조직 · 사용자) 표. 해제하면 그 사용자는 더 이상 볼 수 없다. */
+function MyShares() {
+  const queryClient = useQueryClient();
+  const shares = useQuery({ queryKey: ["user-shares"], queryFn: () => api<UserShare[]>("/user-shares") });
+  const remove = useMutation({
+    mutationFn: (id: number) => api(`/user-shares/${id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["user-shares"] });
+      queryClient.invalidateQueries({ queryKey: ["documents"] });
+    },
   });
   return (
     <section className="card">
       <h2 className="section-title">공유한 가이드</h2>
-      {docs.isLoading && <p className="muted">불러오는 중…</p>}
-      {docs.error && <p className="error">{docs.error.message}</p>}
-      {docs.data?.length === 0 && (
-        <p className="muted">내가 등록한 가이드가 없습니다. <Link to="/documents?type=guide">가이드 등록</Link>에서 먼저 올리세요.</p>
-      )}
-      {!!docs.data?.length && (
+      {shares.isLoading && <p className="muted">불러오는 중…</p>}
+      {shares.error && <p className="error">{shares.error.message}</p>}
+      {remove.error && <p className="error">{remove.error.message}</p>}
+      {shares.data?.length === 0 && <p className="muted">아직 공유한 가이드가 없습니다. 위의 '가이드 공유' 버튼으로 공유하세요.</p>}
+      {!!shares.data?.length && (
         <div className="table-wrap">
-          <table style={{ minWidth: 820 }}>
+          <table style={{ minWidth: 900 }}>
             <thead>
-              <tr><th>문서 이름</th><th>벤더</th><th>등록 일자</th><th>사용자명</th><th>공유 범위</th><th>설정</th></tr>
+              <tr><th>문서 이름</th><th>벤더</th><th>제품</th><th>공유 조직</th><th>공유 사용자</th><th>공유한 사람</th><th>공유 일자</th><th>해제</th></tr>
             </thead>
             <tbody>
-              {docs.data.map((d) => (
-                <tr key={d.id}>
-                  <td><Link to={`/documents/${d.id}`}>{d.title ?? d.url ?? `문서 ${d.id}`}</Link></td>
-                  <td>{d.vendor_name}</td>
-                  <td>{new Date(d.created_at).toLocaleDateString()}</td>
-                  <td>{d.uploaded_by_name ?? "-"}</td>
+              {shares.data.map((s) => (
+                <tr key={s.id}>
+                  <td><Link to={`/documents/${s.document_id}`}>{s.document_title ?? `문서 ${s.document_id}`}</Link></td>
+                  <td>{s.vendor_name}</td>
+                  <td>{productLabel(s.product, s.product_detail)}</td>
+                  <td>{s.partner_name}</td>
+                  <td title={s.user_email}>{s.user_name}</td>
+                  <td>{s.shared_by_name ?? "-"}</td>
+                  <td style={{ whiteSpace: "nowrap" }}>{new Date(s.created_at).toLocaleDateString()}</td>
                   <td>
-                    <div className="actions">
-                      <span className="badge member" title="내 조직은 항상 볼 수 있습니다">{d.partner_name ?? "내 조직"}</span>
-                      {d.shared_with.map((n) => <span key={n} className="badge granted">{n}</span>)}
-                    </div>
+                    <button
+                      className="link danger-link"
+                      disabled={remove.isPending}
+                      onClick={() => {
+                        if (window.confirm(`${s.partner_name} ${s.user_name}님에게 공유한 '${s.document_title ?? "문서"}'를 해제할까요?`)) remove.mutate(s.id);
+                      }}
+                    >
+                      해제
+                    </button>
                   </td>
-                  <td><button className="link" onClick={() => setEditing(d)}>공유 범위 설정</button></td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       )}
-      {editing && <ShareDialog doc={editing} onClose={() => setEditing(null)} />}
     </section>
   );
 }
 
-function ShareDialog({ doc, onClose }: { doc: DocumentSummary; onClose: () => void }) {
+/** 가이드 공유 창: 가이드 → 조직(파트너) → 사용자를 차례로 고른다. 사용자 목록은 고른 조직 소속만 나온다. */
+function ShareDialog({ onClose, onShared }: { onClose: () => void; onShared: () => void }) {
+  const { me } = useAuth();
   const queryClient = useQueryClient();
+  const isAdmin = me?.role === "platform_admin";
+  const docQuery = isAdmin ? "doc_type=guide" : `doc_type=guide&uploaded_by=${me?.id}`;
+  const docs = useQuery({ queryKey: ["documents", docQuery], queryFn: () => api<DocumentSummary[]>(`/documents?${docQuery}`), enabled: !!me });
   const orgs = useQuery({ queryKey: ["organizations"], queryFn: () => api<Org[]>("/organizations") });
-  const [checked, setChecked] = useState<Set<string>>(new Set(doc.shared_with));
+  const [docId, setDocId] = useState("");
+  const [orgId, setOrgId] = useState("");
+  const [userId, setUserId] = useState("");
+  const users = useQuery({
+    queryKey: ["organizations", orgId, "users"],
+    queryFn: () => api<OrgUser[]>(`/organizations/${orgId}/users`),
+    enabled: !!orgId,
+  });
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
-  const save = useMutation({
-    mutationFn: () => {
-      const ids = (orgs.data ?? []).filter((o) => checked.has(o.name)).map((o) => o.id);
-      return api(`/documents/${doc.id}/shares`, { method: "PUT", json: { partner_ids: ids } });
-    },
+  const share = useMutation({
+    mutationFn: () =>
+      api("/user-shares", { method: "POST", json: { document_id: Number(docId), partner_id: Number(orgId), user_ids: [Number(userId)] } }),
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["user-shares"] });
       queryClient.invalidateQueries({ queryKey: ["documents"] });
-      onClose();
+      onShared();
     },
   });
-  const toggle = (name: string) =>
-    setChecked((prev) => {
-      const next = new Set(prev);
-      if (next.has(name)) next.delete(name);
-      else next.add(name);
-      return next;
-    });
+  // 문서를 올린 본인에게는 공유할 필요가 없다
+  const owner = docs.data?.find((d) => String(d.id) === docId)?.uploaded_by;
+  const candidates = (users.data ?? []).filter((u) => u.id !== owner);
 
   return (
     <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal" role="dialog" aria-modal="true" aria-label="공유 범위 설정">
+      <div className="modal" role="dialog" aria-modal="true" aria-label="가이드 공유">
         <div className="summary-head">
-          <h2 style={{ margin: 0 }}>공유 범위 설정</h2>
+          <h2 style={{ margin: 0 }}>가이드 공유</h2>
           <button className="link" onClick={onClose}>닫기</button>
         </div>
-        <p className="muted">{doc.title ?? doc.url}</p>
-        {orgs.isLoading && <p className="muted">불러오는 중…</p>}
-        <div className="share-list">
-          {orgs.data?.map((o) => {
-            const own = o.id === doc.partner_id;
-            return (
-              <label key={o.id} className="check">
-                <input type="checkbox" checked={own || checked.has(o.name)} disabled={own} onChange={() => toggle(o.name)} />
-                {o.name}
-                {own && <span className="muted"> (내 조직 · 항상 공유)</span>}
-              </label>
-            );
-          })}
+        <p className="muted">공유할 가이드, 조직, 사용자를 모두 고르세요.</p>
+        <div className="share-form">
+          <label>
+            가이드
+            <select value={docId} onChange={(e) => setDocId(e.target.value)}>
+              <option value="">가이드를 선택하세요</option>
+              {docs.data?.map((d) => (
+                <option key={d.id} value={d.id}>{`${d.title ?? d.url ?? `문서 ${d.id}`} (${d.vendor_name})`}</option>
+              ))}
+            </select>
+          </label>
+          {docs.data?.length === 0 && (
+            <p className="muted">내가 등록한 가이드가 없습니다. <Link to="/documents?type=guide">가이드 등록</Link>에서 먼저 올리세요.</p>
+          )}
+          <label>
+            조직
+            <select
+              value={orgId}
+              onChange={(e) => {
+                setOrgId(e.target.value);
+                setUserId("");
+              }}
+            >
+              <option value="">조직(파트너)을 선택하세요</option>
+              {orgs.data?.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+            </select>
+          </label>
+          <label>
+            사용자
+            <select value={userId} onChange={(e) => setUserId(e.target.value)} disabled={!orgId}>
+              <option value="">{orgId ? "사용자를 선택하세요" : "조직을 먼저 선택하세요"}</option>
+              {candidates.map((u) => <option key={u.id} value={u.id}>{`${u.name} (${u.email})`}</option>)}
+            </select>
+          </label>
+          {orgId && users.data && candidates.length === 0 && <p className="muted">이 조직에는 공유할 수 있는 사용자가 없습니다.</p>}
         </div>
-        {save.error && <p className="error">{save.error.message}</p>}
+        {share.error && <p className="error">{share.error.message}</p>}
         <div className="actions" style={{ marginTop: 14 }}>
-          <button className="primary" disabled={save.isPending || !orgs.data} onClick={() => save.mutate()}>저장</button>
+          <button className="primary" disabled={share.isPending || !docId || !orgId || !userId} onClick={() => share.mutate()}>공유</button>
           <button onClick={onClose}>취소</button>
         </div>
       </div>

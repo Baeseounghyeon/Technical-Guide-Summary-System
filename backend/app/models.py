@@ -168,6 +168,9 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     custom_domains: Mapped[bool | None] = mapped_column(Boolean)  # 참이면 아래 vendors 만 접근 (파트너사 기본 대신)
+    # 마지막 접속 시각. 30일 넘게 접속하지 않으면 정지되고 관리자가 풀어 줘야 한다 (관리자 제외)
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    suspended_reason: Mapped[str | None] = mapped_column(String(30))  # inactive: 장기 미접속 / manual: 관리자 정지
 
     partner: Mapped[Partner | None] = relationship()
     vendors: Mapped[list[Vendor]] = relationship(secondary=user_vendors)
@@ -179,6 +182,7 @@ class DocType(StrEnum):
     SPEC = "spec"  # 벤더 규격서
     GUIDE = "guide"  # 벤더 기술 가이드
     BROCHURE = "brochure"  # 벤더 브로슈어
+    QUOTE = "quote"  # 견적서
 
 
 class GuideKind(StrEnum):
@@ -217,6 +221,7 @@ class SourceDocument(Base):
     deleter: Mapped["User | None"] = relationship(foreign_keys=[deleted_by])
     partner: Mapped[Partner | None] = relationship()
     shares: Mapped[list["DocumentShare"]] = relationship(cascade="all, delete-orphan")
+    user_shares: Mapped[list["DocumentUserShare"]] = relationship(back_populates="document", cascade="all, delete-orphan")
     sections: Mapped[list["Section"]] = relationship(
         back_populates="document", order_by="Section.order_index", cascade="all, delete-orphan"
     )
@@ -695,6 +700,25 @@ class DocumentShare(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     partner: Mapped[Partner] = relationship()
+
+
+class DocumentUserShare(Base):
+    """가이드 공유 (사용자 단위): 조직을 고른 뒤 그 조직의 사용자까지 골라 공유한다."""
+
+    __tablename__ = "document_user_shares"
+    __table_args__ = (UniqueConstraint("document_id", "user_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    document_id: Mapped[int] = mapped_column(ForeignKey("source_documents.id", ondelete="CASCADE"), index=True)
+    partner_id: Mapped[int] = mapped_column(ForeignKey("partners.id", ondelete="CASCADE"))
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    shared_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    document: Mapped["SourceDocument"] = relationship(back_populates="user_shares")
+    partner: Mapped[Partner] = relationship()
+    user: Mapped[User] = relationship(foreign_keys=[user_id])
+    sharer: Mapped[User | None] = relationship(foreign_keys=[shared_by])
 
 
 class PermissionRequest(Base):

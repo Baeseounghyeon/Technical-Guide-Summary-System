@@ -53,7 +53,9 @@ export default function App() {
       <Route path="/guides/:id" element={<Protected><GuidePage /></Protected>} />
       <Route path="/partner-guides/:id" element={<Protected><PartnerGuidePage /></Protected>} />
       <Route path="/shared" element={<Protected><SharedPage /></Protected>} />
-      <Route path="/quotes" element={<Protected><QuotesPage /></Protected>} />
+      <Route path="/quotes" element={<Protected><RegisteredTypePage key="quote" docType="quote" /></Protected>} />
+      <Route path="/quotes/org" element={<Protected><OrgTypePage key="quote-org" docType="quote" /></Protected>} />
+      <Route path="/quotes/work" element={<Protected><QuotesPage /></Protected>} />
       <Route path="/community" element={<Protected><CommunityPage /></Protected>} />
       <Route path="/community/:vendorId" element={<Protected><DomainPage /></Protected>} />
       <Route path="/community/posts/:id" element={<Protected><PostPage /></Protected>} />
@@ -86,11 +88,11 @@ function Protected({ children, roles, sales }: { children: ReactNode; roles?: Ro
         <nav>
           <NavLink to="/" end>홈</NavLink>
           <DocsMenu />
-          <TypeMenu base="/specs" label="규격서" />
-          {/* 엔지니어·영업 모두 보이고, 등록·생성 항목은 권한이 있을 때만 (없으면 내려받기만) */}
+          {/* 등록 권한이 있으면 '등록한 ○○', 없으면 같은 조직이 올린 것을 내려받기만 하는 '등록된 ○○' */}
+          <TypeMenu base="/specs" label="규격서" canEdit={can("spec")} />
           <GuidesMenu canEdit={can("guide")} />
-          <NavLink to="/quotes">견적서</NavLink>
-          <TypeMenu base="/brochures" label="브로슈어" />
+          <TypeMenu base="/quotes" label="견적서" canEdit={can("quote")} work={can("quote")} />
+          <TypeMenu base="/brochures" label="브로슈어" canEdit={can("brochure")} />
           <NavLink to="/community">커뮤니티</NavLink>
           <RequestsMenu isAdmin={isAdmin} />
           {SETTINGS_ROLES.includes(me.role) && (!isSales || isAdmin) && <NavLink to="/settings">설정</NavLink>}
@@ -120,12 +122,14 @@ function DocsMenu() {
   return <HoverMenu to="/documents" label="문서" items={items} />;
 }
 
-/** 상단 '규격서'·'브로슈어' 메뉴: 누르면 등록한 ○○, 마우스를 올리면 등록한 ○○·조직 요청 ○○. */
-function TypeMenu({ base, label }: { base: string; label: string }) {
+/** 상단 '규격서'·'견적서'·'브로슈어' 메뉴: 누르면 등록한(권한 없으면 등록된) ○○, 마우스를 올리면 그것과 조직 요청 ○○.
+ *  견적서는 권한이 있으면 '견적서 작업'(양식·로고·자료·생성)도 보인다. */
+function TypeMenu({ base, label, canEdit, work = false }: { base: string; label: string; canEdit: boolean; work?: boolean }) {
   const { pathname } = useLocation();
   const items = [
-    { key: "registered", label: `등록한 ${label}`, to: base, active: pathname === base },
+    { key: "registered", label: `${canEdit ? "등록한" : "등록된"} ${label}`, to: base, active: pathname === base },
     { key: "org", label: `조직 요청 ${label}`, to: `${base}/org`, active: pathname === `${base}/org` },
+    ...(work ? [{ key: "work", label: `${label} 작업`, to: `${base}/work`, active: pathname === `${base}/work` }] : []),
   ];
   return <HoverMenu to={base} label={label} items={items} />;
 }
@@ -135,18 +139,18 @@ function GuidesMenu({ canEdit }: { canEdit: boolean }) {
   const { pathname, search } = useLocation();
   const items = [
     ...(canEdit ? [{ key: "upload", label: "가이드 등록", to: "/documents?type=guide", active: pathname === "/documents" && search.includes("type=guide") }] : []),
-    { key: "registered", label: "등록한 가이드", to: "/guides", active: pathname === "/guides" },
+    { key: "registered", label: canEdit ? "등록한 가이드" : "등록된 가이드", to: "/guides", active: pathname === "/guides" },
     { key: "org", label: "조직 요청 가이드", to: "/guides/org", active: pathname === "/guides/org" },
     ...(canEdit ? [{ key: "share", label: "가이드 공유", to: "/guides/share", active: pathname === "/guides/share" }] : []),
   ];
   return <HoverMenu to="/guides" label="가이드" items={items} alsoActive={pathname === "/shared"} />;
 }
 
-/** 상단 '요청' 메뉴: 누르면 내 요청 사항, 마우스를 올리면 내 요청 사항·권한 승인·도메인 권한 요청(일반 사용자). */
+/** 상단 '요청' 메뉴: 누르면 작업 내역, 마우스를 올리면 작업 내역·권한 승인 요청·도메인 권한 요청(일반 사용자). */
 function RequestsMenu({ isAdmin }: { isAdmin: boolean }) {
   const { pathname } = useLocation();
   const items = [
-    { key: "mine", label: "내 요청 사항", to: "/requests", active: pathname === "/requests" },
+    { key: "mine", label: "작업 내역", to: "/requests", active: pathname === "/requests" },
     { key: "approvals", label: "권한 승인 요청", to: isAdmin ? "/admin#permission-requests" : "/requests/approvals", active: pathname === "/requests/approvals" },
     ...(isAdmin ? [] : [{ key: "domain", label: "도메인 권한 요청", to: "/requests/domain", active: pathname === "/requests/domain" }]),
   ];
@@ -274,11 +278,11 @@ function UserMenu() {
             {subtitle && <div className="muted">{subtitle}</div>}
           </div>
           {canManageLogo && (
-            <button className="dropdown-item" role="menuitem" onClick={() => go(isSales ? "/quotes?tab=logo" : "/settings#logo")}>
+            <button className="dropdown-item" role="menuitem" onClick={() => go(isSales ? "/quotes/work?tab=logo" : "/settings#logo")}>
               {isSales ? "견적서 로고·양식 변경" : "회사 로고·양식 변경"}
             </button>
           )}
-          <button className="dropdown-item" role="menuitem" onClick={() => go("/requests")}>내 요청 사항</button>
+          <button className="dropdown-item" role="menuitem" onClick={() => go("/requests")}>작업 내역</button>
           <button className="dropdown-item" role="menuitem" onClick={() => go("/trash")}>휴지통</button>
           {me.role !== "platform_admin" && (
             <button className="dropdown-item" role="menuitem" onClick={() => go("/requests/domain")}>도메인 권한 요청</button>

@@ -90,6 +90,7 @@ export const GRANT_STATUS: Record<string, string> = {
 export const DOC_TYPES = [
   { key: "spec", label: "규격서", full: "규격서" },
   { key: "guide", label: "가이드", full: "가이드" },
+  { key: "quote", label: "견적서", full: "견적서" },
   { key: "brochure", label: "브로슈어", full: "브로슈어" },
 ] as const;
 export type DocTypeKey = (typeof DOC_TYPES)[number]["key"];

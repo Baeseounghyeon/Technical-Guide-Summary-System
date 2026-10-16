@@ -57,6 +57,8 @@ class UserOut(ORM):
     status: str
     partner_id: int | None
     created_at: UTCDateTime
+    last_seen_at: UTCDateTime | None = None
+    suspended_reason: str | None = None  # inactive: 30일 미접속 / manual: 관리자 정지
 
 
 class MeOut(UserOut):

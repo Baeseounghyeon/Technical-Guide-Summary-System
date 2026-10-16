@@ -20,6 +20,8 @@ export interface User {
   status: "pending" | "active" | "suspended";
   partner_id: number | null;
   created_at: string;
+  last_seen_at?: string | null;
+  suspended_reason?: "inactive" | "manual" | null; // inactive: 30일 미접속 정지
 }
 
 export interface AdminUser extends User {

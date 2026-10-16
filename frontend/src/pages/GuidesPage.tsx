@@ -69,25 +69,34 @@ export default function GuidesPage() {
   return <RegisteredTypePage docType="guide" />;
 }
 
-/** 등록한 규격서·가이드·브로슈어: 문서 등록에서 그 종류로 올린 문서. 벤더·제품군·상세·(가이드 종류)·파트너·작성자로 거른다. */
+/** 등록한 규격서·가이드·견적서·브로슈어: 문서 등록에서 그 종류로 올린 문서. 벤더·제품군·상세·(가이드 종류)·파트너·작성자로 거른다.
+ *  그 종류를 등록할 권한이 없으면(예: 영업의 가이드, 엔지니어의 규격서) '등록된 ○○'로 같은 조직 사람이 올린 것만 보고 내려받는다. */
 export function RegisteredTypePage({ docType }: { docType: DocTypeKey }) {
+  const { me } = useAuth();
   const [filters, go] = useFilters();
   const label = DOC_TYPES.find((t) => t.key === docType)!.label;
   const isGuide = docType === "guide";
   const kindLabel = GUIDE_KINDS.find((k) => k.key === filters.kind)?.label;
+  const viewOnly = !!me && me.role !== "platform_admin" && !me.permissions.includes(docType);
+  const verb = viewOnly ? "등록된" : "등록한";
+  const base = [`doc_type=${docType}`, ...(viewOnly ? [`partner_id=${me?.partner_id ?? 0}`] : [])];
 
   // 파트너·작성자 선택지는 이 종류의 문서 전체에서 뽑는다.
-  const all = useQuery({ queryKey: ["documents", `doc_type=${docType}`], queryFn: () => api<DocumentSummary[]>(`/documents?doc_type=${docType}`) });
+  const all = useQuery({ queryKey: ["documents", base.join("&")], queryFn: () => api<DocumentSummary[]>(`/documents?${base.join("&")}`) });
   const partners = uniqueOptions(all.data ?? [], (d) => (d.partner_id ? [d.partner_id, d.partner_name ?? `파트너 ${d.partner_id}`] : null));
   const authors = uniqueOptions(all.data ?? [], (d) => [d.uploaded_by, d.uploaded_by_name ?? `사용자 ${d.uploaded_by}`]);
 
   return (
     <>
       <div className="page-header">
-        <h1>{label}</h1>
-        <p className="muted">
-          문서 등록에서 '{label}'(으)로 등록한 문서입니다. 새 문서는 <Link to={`/documents?type=${docType}`}>문서 등록</Link>에서 올리세요.
-        </p>
+        <h1>{verb} {label}</h1>
+        {viewOnly ? (
+          <p className="muted">같은 조직({me?.partner_name ?? "소속 없음"}) 사람이 등록한 {label}입니다. 내려받기만 할 수 있습니다.</p>
+        ) : (
+          <p className="muted">
+            문서 등록에서 '{label}'(으)로 등록한 문서입니다. 새 문서는 <Link to={`/documents?type=${docType}`}>문서 등록</Link>에서 올리세요.
+          </p>
+        )}
       </div>
       {/* 선택칸 상자와 목록 상자를 나눠 둔다 */}
       <section className="card">
@@ -102,13 +111,15 @@ export function RegisteredTypePage({ docType }: { docType: DocTypeKey }) {
               </select>
             </label>
           )}
-          <label style={{ flex: "0 0 200px" }}>
-            파트너
-            <select value={filters.partner} onChange={(e) => go({ partner: e.target.value })}>
-              <option value="">전체 파트너</option>
-              {partners.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
-            </select>
-          </label>
+          {!viewOnly && (
+            <label style={{ flex: "0 0 200px" }}>
+              파트너
+              <select value={filters.partner} onChange={(e) => go({ partner: e.target.value })}>
+                <option value="">전체 파트너</option>
+                {partners.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+              </select>
+            </label>
+          )}
           <label style={{ flex: "0 0 200px" }}>
             작성자
             <select value={filters.author} onChange={(e) => go({ author: e.target.value })}>
@@ -119,9 +130,13 @@ export function RegisteredTypePage({ docType }: { docType: DocTypeKey }) {
         </div>
       </section>
       <section className="card">
-        <h2 className="section-title">{kindLabel ? `등록한 ${kindLabel}` : `등록한 ${label}`}</h2>
+        <h2 className="section-title">{verb} {kindLabel ?? label}</h2>
         {/* 종류를 고르면 그 종류만 보이므로 종류 열은 전체일 때만 보여 준다 */}
-        <DocumentTable query={buildQuery([`doc_type=${docType}`], filters)} showGuideKind={isGuide && !filters.kind} />
+        {viewOnly && !me?.partner_id ? (
+          <p className="muted">소속 조직이 지정되지 않았습니다.</p>
+        ) : (
+          <DocumentTable query={buildQuery(base, viewOnly ? { ...filters, partner: "" } : filters)} showGuideKind={isGuide && !filters.kind} showStatus={!viewOnly} readOnly={viewOnly} />
+        )}
       </section>
     </>
   );
