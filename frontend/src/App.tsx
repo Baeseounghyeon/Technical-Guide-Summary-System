@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import logoUrl from "./assets/unipoint-logo.png";
 import { useAuth } from "./auth";
-import { ROLE_LABELS } from "./labels";
+import { ROLE_LABELS, TRACK_LABELS } from "./labels";
 import AdminPage from "./pages/AdminPage";
 import CommunityPage from "./pages/CommunityPage";
 import DashboardPage from "./pages/DashboardPage";
@@ -13,6 +13,7 @@ import DocumentsPage from "./pages/DocumentsPage";
 import GuidePage from "./pages/GuidePage";
 import LoginPage from "./pages/LoginPage";
 import PartnerGuidePage from "./pages/PartnerGuidePage";
+import QuotesPage from "./pages/QuotesPage";
 import NotificationBell from "./NotificationBell";
 import SettingsPage from "./pages/SettingsPage";
 import SharedPage from "./pages/SharedPage";
@@ -30,6 +31,7 @@ export default function App() {
       <Route path="/guides/:id" element={<Protected><GuidePage /></Protected>} />
       <Route path="/partner-guides/:id" element={<Protected><PartnerGuidePage /></Protected>} />
       <Route path="/shared" element={<Protected><SharedPage /></Protected>} />
+      <Route path="/quotes" element={<Protected sales><QuotesPage /></Protected>} />
       <Route path="/community" element={<Protected><CommunityPage /></Protected>} />
       <Route path="/community/:vendorId" element={<Protected><DomainPage /></Protected>} />
       <Route path="/community/posts/:id" element={<Protected><PostPage /></Protected>} />
@@ -42,11 +44,15 @@ export default function App() {
 
 const SETTINGS_ROLES: Role[] = ["platform_admin", "partner_admin"];
 
-function Protected({ children, roles }: { children: ReactNode; roles?: Role[] }) {
+function Protected({ children, roles, sales }: { children: ReactNode; roles?: Role[]; sales?: boolean }) {
   const { me, loading } = useAuth();
   if (loading) return <p className="page">불러오는 중…</p>;
   if (!me) return <Navigate to="/login" replace />;
   if (roles && !roles.includes(me.role)) return <Navigate to="/" replace />;
+  // 업무 구분: 영업은 '가이드 공유' 대신 '견적서', 엔지니어는 그 반대. 플랫폼 관리자는 둘 다 본다.
+  const isAdmin = me.role === "platform_admin";
+  const isSales = me.track === "sales";
+  if (sales && !isSales && !isAdmin) return <Navigate to="/" replace />;
 
   return (
     <>
@@ -57,9 +63,10 @@ function Protected({ children, roles }: { children: ReactNode; roles?: Role[] })
         <nav>
           <NavLink to="/" end>홈</NavLink>
           <NavLink to="/documents">문서</NavLink>
-          <NavLink to="/shared">가이드 공유</NavLink>
+          {(!isSales || isAdmin) && <NavLink to="/shared">가이드 공유</NavLink>}
+          {(isSales || isAdmin) && <NavLink to="/quotes">견적서</NavLink>}
           <NavLink to="/community">커뮤니티</NavLink>
-          {SETTINGS_ROLES.includes(me.role) && <NavLink to="/settings">설정</NavLink>}
+          {SETTINGS_ROLES.includes(me.role) && (!isSales || isAdmin) && <NavLink to="/settings">설정</NavLink>}
           {me.role === "platform_admin" && <NavLink to="/admin">관리자</NavLink>}
         </nav>
         <div className="topbar-right">
@@ -119,7 +126,9 @@ function UserMenu() {
   const canManageLogo = SETTINGS_ROLES.includes(me.role);
   // 이름이 권한 이름과 같으면(예: 관리자 계정 이름 "플랫폼 관리자") 한 번만 보여 준다.
   const roleLabel = ROLE_LABELS[me.role] === me.name ? null : ROLE_LABELS[me.role];
-  const subtitle = [roleLabel, me.partner_name].filter(Boolean).join(" · ");
+  const trackLabel = me.role === "platform_admin" ? null : TRACK_LABELS[me.track ?? "engineer"];
+  const subtitle = [trackLabel, roleLabel, me.partner_name].filter(Boolean).join(" · ");
+  const isSales = me.track === "sales" && me.role !== "platform_admin";
 
   return (
     <div className="user-menu" ref={ref}>
@@ -136,7 +145,9 @@ function UserMenu() {
             {subtitle && <div className="muted">{subtitle}</div>}
           </div>
           {canManageLogo && (
-            <button className="dropdown-item" role="menuitem" onClick={() => go("/settings#logo")}>회사 로고·양식 변경</button>
+            <button className="dropdown-item" role="menuitem" onClick={() => go(isSales ? "/quotes?tab=logo" : "/settings#logo")}>
+              {isSales ? "견적서 로고·양식 변경" : "회사 로고·양식 변경"}
+            </button>
           )}
           {me.role !== "platform_admin" && (
             <button className="dropdown-item" role="menuitem" onClick={() => go("/community#access")}>다른 도메인 권한 신청</button>

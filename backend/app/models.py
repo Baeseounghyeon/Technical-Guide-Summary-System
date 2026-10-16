@@ -29,6 +29,13 @@ class Role(StrEnum):
     ENGINEER = "engineer"
 
 
+class Track(StrEnum):
+    """업무 구분: 엔지니어(기술 가이드 요약) / 영업(견적서). 비어 있으면 엔지니어로 본다."""
+
+    ENGINEER = "engineer"
+    SALES = "sales"
+
+
 class UserStatus(StrEnum):
     PENDING = "pending"
     ACTIVE = "active"
@@ -126,6 +133,9 @@ class Partner(Base):
     pptx_template_path: Mapped[str | None] = mapped_column(String(500))
     # 이 회사가 한 달에 쓸 수 있는 AI 처리량(쪽 환산). 비우면 기본값(DEFAULT_MONTHLY_PAGE_QUOTA)
     monthly_page_quota: Mapped[int | None] = mapped_column(Integer)
+    # 영업: 견적서 양식과 견적서에 넣을 로고 (엔지니어 문서용 로고·양식과 따로 관리)
+    quote_template_path: Mapped[str | None] = mapped_column(String(500))
+    quote_logo_path: Mapped[str | None] = mapped_column(String(500))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     vendors: Mapped[list[Vendor]] = relationship(secondary=partner_vendors)
@@ -143,6 +153,7 @@ class User(Base):
     # 가입 신청 시 입력한 소속 회사명. 승인할 때 관리자가 partner_id 로 연결한다.
     company_name: Mapped[str | None] = mapped_column(String(200))
     role: Mapped[str] = mapped_column(String(30), default=Role.ENGINEER)
+    track: Mapped[str | None] = mapped_column(String(20), default=Track.ENGINEER)  # 엔지니어 / 영업
     status: Mapped[str] = mapped_column(String(20), default=UserStatus.PENDING)
     partner_id: Mapped[int | None] = mapped_column(ForeignKey("partners.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
@@ -589,3 +600,21 @@ class UsageRecord(Base):
     output_tokens: Mapped[int] = mapped_column(Integer, default=0)
     cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
+class QuoteFile(Base):
+    """영업: 견적서를 만들 때 참고할 자료 (벤더 규격서, 제품 기능 소개, 가격표 등)."""
+
+    __tablename__ = "quote_files"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    partner_id: Mapped[int | None] = mapped_column(ForeignKey("partners.id", ondelete="CASCADE"), index=True)
+    vendor_id: Mapped[int | None] = mapped_column(ForeignKey("vendors.id", ondelete="SET NULL"))
+    uploaded_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    category: Mapped[str] = mapped_column(String(20))  # spec | feature | price | other
+    filename: Mapped[str] = mapped_column(String(300))
+    file_path: Mapped[str] = mapped_column(String(500))
+    note: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    vendor: Mapped[Vendor | None] = relationship()

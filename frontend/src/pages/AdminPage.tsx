@@ -2,8 +2,8 @@ import { Fragment, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { useAuth } from "../auth";
-import { GRANT_STATUS, ROLE_LABELS } from "../labels";
-import type { AccessGrant, AdminUser, Partner, PartnerUsage, Role, UsageOverview, Vendor } from "../types";
+import { GRANT_STATUS, ROLE_LABELS, TRACK_LABELS } from "../labels";
+import type { AccessGrant, AdminUser, Partner, PartnerUsage, Role, Track, UsageOverview, Vendor } from "../types";
 
 export default function AdminPage() {
   return (
@@ -21,6 +21,7 @@ export default function AdminPage() {
 }
 
 function Members() {
+  const [track, setTrack] = useState<Track>("engineer");
   const [statusFilter, setStatusFilter] = useState("");
   const [q, setQ] = useState("");
   const users = useQuery({
@@ -36,17 +37,29 @@ function Members() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin"] }),
   });
   const keyword = q.trim().toLowerCase();
+  const trackOf = (u: AdminUser): Track => u.track ?? "engineer";
+  const counts = { engineer: 0, sales: 0 };
+  for (const u of users.data ?? []) counts[trackOf(u)] += 1;
   // 승인 대기자를 맨 위로
   const shown = (users.data ?? [])
+    .filter((u) => trackOf(u) === track)
     .filter((u) => !keyword || [u.name, u.email, u.partner_name, u.company_name].some((v) => v?.toLowerCase().includes(keyword)))
     .sort((a, b) => Number(b.status === "pending") - Number(a.status === "pending"));
   const pendingCount = (users.data ?? []).filter((u) => u.status === "pending").length;
+  const pendingIn = (t: Track) => (users.data ?? []).filter((u) => u.status === "pending" && trackOf(u) === t).length;
 
   return (
     <section className="card">
       <div className="summary-head">
         <h2 style={{ margin: 0 }}>가입자</h2>
         {pendingCount > 0 && <span className="badge pending">승인 대기 {pendingCount}명</span>}
+      </div>
+      <div className="filters">
+        {(["engineer", "sales"] as Track[]).map((t) => (
+          <button key={t} className={track === t ? "active" : ""} onClick={() => setTrack(t)}>
+            {TRACK_LABELS[t]} {counts[t]}명{pendingIn(t) ? ` · 대기 ${pendingIn(t)}` : ""}
+          </button>
+        ))}
       </div>
       <div className="form-row" style={{ marginBottom: 8 }}>
         <label>검색 (이름·메일·회사)<input value={q} onChange={(e) => setQ(e.target.value)} /></label>
@@ -249,9 +262,13 @@ function AssignForm({ user, partners, onDone }: { user: AdminUser; partners: Par
   const [chosen, setPartnerId] = useState<number | "" | undefined>(undefined);
   const partnerId = chosen ?? user.partner_id ?? partners.find((p) => p.name === user.company_name)?.id ?? "";
   const [role, setRole] = useState<Role>(user.status === "pending" ? "engineer" : user.role);
+  const [track, setTrack] = useState<Track>(user.track ?? "engineer");
   const save = useMutation({
     mutationFn: () =>
-      api(`/admin/users/${user.id}/approve`, { method: "POST", json: { partner_id: partnerId === "" ? null : partnerId, role } }),
+      api(`/admin/users/${user.id}/approve`, {
+        method: "POST",
+        json: { partner_id: partnerId === "" ? null : partnerId, role, track },
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin"] });
       onDone();
@@ -272,6 +289,12 @@ function AssignForm({ user, partners, onDone }: { user: AdminUser; partners: Par
         권한
         <select value={role} onChange={(e) => setRole(e.target.value as Role)}>
           {Object.entries(ROLE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+        </select>
+      </label>
+      <label style={{ flex: "0 0 140px" }}>
+        업무 구분
+        <select value={track} onChange={(e) => setTrack(e.target.value as Track)}>
+          {Object.entries(TRACK_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </select>
       </label>
       <div className="actions">

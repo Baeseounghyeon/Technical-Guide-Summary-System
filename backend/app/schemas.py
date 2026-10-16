@@ -26,6 +26,7 @@ class SignupIn(BaseModel):
     company_name: str = Field(min_length=1, max_length=200)
     department: str | None = None
     phone: str | None = None
+    track: Literal["engineer", "sales"] = "engineer"
 
 
 class LoginIn(BaseModel):
@@ -52,6 +53,7 @@ class UserOut(ORM):
     department: str | None
     company_name: str | None
     role: str
+    track: str | None
     status: str
     partner_id: int | None
     created_at: UTCDateTime
@@ -78,6 +80,7 @@ class AdminUserOut(UserOut):
 class ApproveIn(BaseModel):
     partner_id: int | None = None
     role: Literal["platform_admin", "partner_admin", "engineer"] = "engineer"
+    track: Literal["engineer", "sales"] | None = None  # 비우면 그대로 둔다
 
 
 # ---- 파트너 / 벤더 ----
@@ -93,6 +96,8 @@ class PartnerOut(ORM):
     logo_path: str | None
     docx_template_path: str | None
     pptx_template_path: str | None
+    quote_template_path: str | None
+    quote_logo_path: str | None
     vendors: list[VendorOut]
 
 
@@ -592,3 +597,15 @@ class AccessDecisionIn(BaseModel):
     grant_type: Literal["read", "member"] = "read"
     days: int | None = Field(default=None, ge=1, le=365)  # read 일 때만. 비우면 신청 기간
     note: str | None = None
+
+
+class QuoteFileOut(ORM):
+    id: int
+    partner_id: int | None
+    vendor_id: int | None
+    vendor_name: str | None = None
+    category: str
+    filename: str
+    note: str | None
+    uploaded_by: int
+    created_at: UTCDateTime

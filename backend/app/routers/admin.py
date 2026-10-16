@@ -74,6 +74,8 @@ def approve_user(user_id: int, body: ApproveIn, db: Session = Depends(get_db)) -
         _get_or_404(db, Partner, body.partner_id)
     user.partner_id = body.partner_id
     user.role = body.role
+    if body.track is not None:
+        user.track = body.track
     user.status = UserStatus.ACTIVE
     db.commit()
     return user

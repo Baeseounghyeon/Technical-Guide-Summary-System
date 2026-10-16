@@ -20,7 +20,7 @@ from ..services.storage import get_storage
 router = APIRouter(prefix="/api", tags=["업로드"])
 
 INCOMING = "incoming/"
-ALLOWED_EXTENSIONS = {".pdf", ".docx", ".pptx", ".dotx", ".potx", ".png", ".jpg", ".jpeg"}
+ALLOWED_EXTENSIONS = {".pdf", ".docx", ".pptx", ".dotx", ".potx", ".xlsx", ".csv", ".txt", ".png", ".jpg", ".jpeg"}
 
 
 class UploadSlotIn(BaseModel):

@@ -23,6 +23,7 @@ def signup(body: SignupIn, db: Session = Depends(get_db)) -> User:
         phone=body.phone,
         department=body.department,
         company_name=body.company_name,
+        track=body.track,
     )
     db.add(user)
     db.commit()

@@ -1,4 +1,6 @@
 export type Role = "platform_admin" | "partner_admin" | "engineer";
+/** 업무 구분: 엔지니어(기술 가이드 요약) / 영업(견적서). null 이면 엔지니어 */
+export type Track = "engineer" | "sales";
 
 export interface Vendor {
   id: number;
@@ -14,6 +16,7 @@ export interface User {
   department: string | null;
   company_name: string | null;
   role: Role;
+  track: Track | null;
   status: "pending" | "active" | "suspended";
   partner_id: number | null;
   created_at: string;
@@ -36,6 +39,8 @@ export interface Partner {
   logo_path: string | null;
   docx_template_path: string | null;
   pptx_template_path: string | null;
+  quote_template_path: string | null;
+  quote_logo_path: string | null;
   vendors: Vendor[];
 }
 
@@ -418,4 +423,16 @@ export interface UsageOverview {
   llm_provider: string;
   partners: PartnerUsage[];
   unassigned: { used_pages: number; cost_usd: number };
+}
+
+export interface QuoteFile {
+  id: number;
+  partner_id: number | null;
+  vendor_id: number | null;
+  vendor_name: string | null;
+  category: "spec" | "feature" | "price" | "other";
+  filename: string;
+  note: string | null;
+  uploaded_by: number;
+  created_at: string;
 }

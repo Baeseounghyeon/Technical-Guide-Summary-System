@@ -16,11 +16,14 @@ from .uploads import store_upload
 
 router = APIRouter(prefix="/api/partners", tags=["파트너사"])
 
-AssetKind = Literal["logo", "docx_template", "pptx_template"]
+AssetKind = Literal["logo", "docx_template", "pptx_template", "quote_template", "quote_logo"]
 ALLOWED = {
     "logo": {".png", ".jpg", ".jpeg"},
     "docx_template": {".docx", ".dotx"},
     "pptx_template": {".pptx", ".potx"},
+    # 영업: 견적서 양식(엑셀·워드 등)과 견적서용 로고
+    "quote_template": {".xlsx", ".docx", ".pptx", ".pdf"},
+    "quote_logo": {".png", ".jpg", ".jpeg"},
 }
 LOGO_MEDIA_TYPES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg"}
 
@@ -65,3 +68,16 @@ def _partner_for(db: Session, user: User, partner_id: int, *, manage: bool) -> P
     if manage and not (is_admin(user) or user.role == Role.PARTNER_ADMIN):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "파트너사 관리자만 변경할 수 있습니다.")
     return partner
+
+
+@router.get("/{partner_id}/assets/{kind}")
+def download_asset(
+    partner_id: int, kind: AssetKind, user: User = Depends(get_active_user), db: Session = Depends(get_db)
+) -> Response:
+    """등록한 로고·양식 파일 받기 (미리보기·확인용). 해당 파트너사 소속이면 누구나."""
+    partner = _partner_for(db, user, partner_id, manage=False)
+    ref = getattr(partner, f"{kind}_path")
+    if not ref or not get_storage().exists(ref):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "등록된 파일이 없습니다.")
+    ext = Path(ref).suffix.lower()
+    return get_storage().response(ref, f"{partner.name}_{kind}{ext}", LOGO_MEDIA_TYPES.get(ext, "application/octet-stream"))

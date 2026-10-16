@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { api } from "../api";
 import logoUrl from "../assets/unipoint-logo.png";
 
-const EMPTY = { email: "", password: "", name: "", company_name: "", department: "", phone: "" };
+const EMPTY = { email: "", password: "", name: "", company_name: "", department: "", phone: "", track: "engineer" };
 
 export default function SignupPage() {
   const [form, setForm] = useState(EMPTY);
@@ -42,6 +42,13 @@ export default function SignupPage() {
             <label>소속 회사<input value={form.company_name} onChange={set("company_name")} required /></label>
             <label>부서<input value={form.department} onChange={set("department")} /></label>
             <label>연락처<input value={form.phone} onChange={set("phone")} /></label>
+            <label>
+              업무 구분
+              <select value={form.track} onChange={set("track")}>
+                <option value="engineer">엔지니어 (기술 가이드 요약)</option>
+                <option value="sales">영업 (견적서 생성)</option>
+              </select>
+            </label>
             {error && <p className="error">{error}</p>}
             <button className="primary">신청</button>
             <p className="muted"><Link to="/login">로그인 화면으로</Link></p>

@@ -20,6 +20,7 @@ from .routers import (
     jobs,
     partner_guides,
     partners,
+    quotes,
     sharing,
     uploads,
     usage,
@@ -100,7 +101,8 @@ app.add_middleware(
 )
 
 for module in (
-    auth, admin, vendors, partners, documents, guides, exports, partner_guides, community, dashboard, sharing, uploads, jobs, usage,
+    auth, admin, vendors, partners, documents, guides, exports, partner_guides,
+    community, dashboard, sharing, uploads, jobs, usage, quotes,
 ):
     app.include_router(module.router)
 

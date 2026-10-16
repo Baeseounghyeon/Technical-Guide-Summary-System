@@ -28,7 +28,20 @@ export const STATUS_LABELS: Record<string, string> = {
 export const ROLE_LABELS: Record<string, string> = {
   platform_admin: "플랫폼 관리자",
   partner_admin: "파트너 관리자",
+  engineer: "일반 사용자",
+};
+
+/** 업무 구분 (권한과 별개) */
+export const TRACK_LABELS: Record<string, string> = {
   engineer: "엔지니어",
+  sales: "영업",
+};
+
+export const QUOTE_CATEGORY_LABELS: Record<string, string> = {
+  spec: "규격서",
+  feature: "제품 기능",
+  price: "가격표",
+  other: "기타",
 };
 
 export const ORIGIN_LABELS: Record<string, string> = {
