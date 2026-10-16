@@ -169,6 +169,13 @@ class DocType(StrEnum):
     BROCHURE = "brochure"  # 벤더 브로슈어
 
 
+class GuideKind(StrEnum):
+    """기술 가이드 문서의 세부 종류. 비어 있으면 기술 가이드로 본다."""
+
+    TECHNICAL = "technical"  # 기술 가이드
+    TROUBLESHOOTING = "troubleshooting"  # 트러블 슈팅 가이드
+
+
 class SourceDocument(Base):
     __tablename__ = "source_documents"
 
@@ -179,6 +186,7 @@ class SourceDocument(Base):
     title: Mapped[str | None] = mapped_column(String(500))
     doc_type: Mapped[str | None] = mapped_column(String(20), default=DocType.GUIDE)  # spec | guide | brochure
     description: Mapped[str | None] = mapped_column(Text)
+    guide_kind: Mapped[str | None] = mapped_column(String(20))  # doc_type=guide 일 때: technical | troubleshooting
     source_type: Mapped[str] = mapped_column(String(10))  # pdf | docx | pptx | url
     file_path: Mapped[str | None] = mapped_column(String(500))
     url: Mapped[str | None] = mapped_column(String(2000))

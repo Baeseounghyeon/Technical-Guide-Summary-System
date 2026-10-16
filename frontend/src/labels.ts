@@ -93,3 +93,10 @@ export const DOC_TYPES = [
   { key: "brochure", label: "브로슈어", full: "벤더 브로슈어" },
 ] as const;
 export type DocTypeKey = (typeof DOC_TYPES)[number]["key"];
+
+/** 기술 가이드 문서의 세부 종류 (가이드 화면의 종류 선택) */
+export const GUIDE_KINDS = [
+  { key: "technical", label: "기술 가이드" },
+  { key: "troubleshooting", label: "트러블 슈팅 가이드" },
+] as const;
+export type GuideKindKey = (typeof GUIDE_KINDS)[number]["key"];

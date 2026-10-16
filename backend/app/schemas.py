@@ -155,6 +155,7 @@ class DocumentOut(ORM):
     vendor_name: str
     title: str | None
     doc_type: str
+    guide_kind: str | None  # 기술 가이드 문서만: technical | troubleshooting
     description: str | None
     uploaded_by_name: str | None
     source_type: str

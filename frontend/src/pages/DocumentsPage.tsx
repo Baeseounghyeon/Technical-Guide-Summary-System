@@ -3,7 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { useAuth } from "../auth";
-import { DOC_TYPES, STATUS_LABELS, type DocTypeKey } from "../labels";
+import { DOC_TYPES, GUIDE_KINDS, STATUS_LABELS, type DocTypeKey, type GuideKindKey } from "../labels";
 import type { DocumentSummary } from "../types";
 
 const IN_PROGRESS = new Set(["uploaded", "parsing"]);
@@ -54,16 +54,20 @@ export default function DocumentsPage() {
             </select>
           </label>
         </div>
-        <DocumentTable docType={docType} vendorId={listVendor} />
+        <DocumentTable
+          query={`doc_type=${docType}${listVendor ? `&vendor_id=${listVendor}` : ""}`}
+          showGuideKind={docType === "guide"}
+        />
       </section>
     </>
   );
 }
 
-function DocumentTable({ docType, vendorId }: { docType: DocTypeKey; vendorId: number | "" }) {
+/** 문서 표 (문서 화면의 종류별 탭과 가이드 화면이 함께 쓴다). query 는 /documents 목록 API 의 검색 조건. */
+export function DocumentTable({ query, showGuideKind = false }: { query: string; showGuideKind?: boolean }) {
   const docs = useQuery({
-    queryKey: ["documents", docType, vendorId],
-    queryFn: () => api<DocumentSummary[]>(`/documents?doc_type=${docType}${vendorId ? `&vendor_id=${vendorId}` : ""}`),
+    queryKey: ["documents", query],
+    queryFn: () => api<DocumentSummary[]>(`/documents?${query}`),
     refetchInterval: (q) => (q.state.data?.some((d) => IN_PROGRESS.has(d.status)) ? 2000 : false),
   });
   if (docs.isLoading) return <p className="muted">불러오는 중…</p>;
@@ -73,12 +77,19 @@ function DocumentTable({ docType, vendorId }: { docType: DocTypeKey; vendorId: n
     <div className="table-wrap">
       <table style={{ minWidth: 900 }}>
         <thead>
-          <tr><th>문서 이름</th><th>설명</th><th>벤더</th><th>등록자</th><th>등록 날짜</th><th>형식·분량</th><th>상태</th></tr>
+          <tr>
+            <th>문서 이름</th>
+            {showGuideKind && <th>가이드 종류</th>}
+            <th>설명</th><th>벤더</th><th>등록자</th><th>등록 날짜</th><th>형식·분량</th><th>상태</th>
+          </tr>
         </thead>
         <tbody>
           {docs.data.map((d) => (
             <tr key={d.id}>
               <td><Link to={`/documents/${d.id}`}>{d.title ?? d.url ?? `문서 ${d.id}`}</Link></td>
+              {showGuideKind && (
+                <td style={{ whiteSpace: "nowrap" }}>{GUIDE_KINDS.find((k) => k.key === d.guide_kind)?.label ?? "-"}</td>
+              )}
               <td style={{ maxWidth: 280 }}>{d.description ?? <span className="muted">-</span>}</td>
               <td>{d.vendor_name}</td>
               <td style={{ whiteSpace: "nowrap" }}>{d.uploaded_by_name ?? "-"}</td>
@@ -99,6 +110,7 @@ function UploadForm({ defaultType, onUploaded }: { defaultType: DocTypeKey; onUp
   const vendors = me?.vendors ?? [];
   const [chosenType, setDocType] = useState<DocTypeKey>();
   const docType = chosenType ?? defaultType; // 고르기 전에는 지금 보고 있는 탭
+  const [guideKind, setGuideKind] = useState<GuideKindKey>("technical");
   const [vendorId, setVendorId] = useState<number | "">("");
   const [mode, setMode] = useState<"file" | "url">("file");
   const [file, setFile] = useState<File | null>(null);
@@ -112,6 +124,7 @@ function UploadForm({ defaultType, onUploaded }: { defaultType: DocTypeKey; onUp
       const form = new FormData();
       form.append("vendor_id", String(vendorId));
       form.append("doc_type", docType);
+      if (docType === "guide") form.append("guide_kind", guideKind);
       if (title) form.append("title", title);
       if (description.trim()) form.append("description", description.trim());
       if (mode === "file" && file) form.append("file", file);
@@ -149,6 +162,14 @@ function UploadForm({ defaultType, onUploaded }: { defaultType: DocTypeKey; onUp
                 {DOC_TYPES.map((t) => <option key={t.key} value={t.key}>{t.full}</option>)}
               </select>
             </label>
+            {docType === "guide" && (
+              <label style={{ flex: "0 0 180px" }}>
+                가이드 종류
+                <select value={guideKind} onChange={(e) => setGuideKind(e.target.value as GuideKindKey)}>
+                  {GUIDE_KINDS.map((k) => <option key={k.key} value={k.key}>{k.label}</option>)}
+                </select>
+              </label>
+            )}
             <label>
               벤더 도메인
               <select value={vendorId} onChange={(e) => setVendorId(Number(e.target.value) || "")} required>

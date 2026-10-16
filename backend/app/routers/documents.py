@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..deps import accessible_vendors, ensure_vendor_access, get_active_user, get_document_for_user, is_admin
-from ..models import DocType, JobKind, Section, SourceDocument, User
+from ..models import DocType, GuideKind, JobKind, Section, SourceDocument, User
 from ..schemas import DocumentDetail, DocumentOut, GuideBrief, SectionOut, SectionPatch
 from ..services.jobs import enqueue
 from ..services.parsing import SUPPORTED_EXTENSIONS
@@ -22,6 +22,7 @@ def create_document(
     vendor_id: int = Form(...),
     title: str | None = Form(None),
     doc_type: Literal["spec", "guide", "brochure"] = Form("guide"),
+    guide_kind: Literal["technical", "troubleshooting"] = Form("technical"),
     description: str | None = Form(None),
     url: str | None = Form(None),
     file: UploadFile | None = File(None),
@@ -42,6 +43,7 @@ def create_document(
         uploaded_by=user.id,
         title=title or None,
         doc_type=doc_type,
+        guide_kind=guide_kind if doc_type == DocType.GUIDE else None,
         description=(description or "").strip() or None,
     )
     if has_file:
@@ -71,6 +73,7 @@ def create_document(
 def list_documents(
     vendor_id: int | None = None,
     doc_type: Literal["spec", "guide", "brochure"] | None = None,
+    guide_kind: Literal["technical", "troubleshooting"] | None = None,
     user: User = Depends(get_active_user),
     db: Session = Depends(get_db),
 ) -> list[DocumentOut]:
@@ -85,6 +88,10 @@ def list_documents(
         query = query.where(or_(SourceDocument.doc_type == DocType.GUIDE, SourceDocument.doc_type.is_(None)))
     elif doc_type is not None:
         query = query.where(SourceDocument.doc_type == doc_type)
+    if guide_kind == GuideKind.TECHNICAL:
+        query = query.where(or_(SourceDocument.guide_kind == GuideKind.TECHNICAL, SourceDocument.guide_kind.is_(None)))
+    elif guide_kind is not None:
+        query = query.where(SourceDocument.guide_kind == guide_kind)
     return [_document_out(d) for d in db.scalars(query)]
 
 
@@ -121,6 +128,7 @@ def _document_out(doc: SourceDocument) -> DocumentOut:
         vendor_name=doc.vendor.name,
         title=doc.title,
         doc_type=doc.doc_type or DocType.GUIDE,
+        guide_kind=(doc.guide_kind or GuideKind.TECHNICAL) if (doc.doc_type or DocType.GUIDE) == DocType.GUIDE else None,
         description=doc.description,
         uploaded_by_name=doc.uploader.name if doc.uploader else None,
         source_type=doc.source_type,

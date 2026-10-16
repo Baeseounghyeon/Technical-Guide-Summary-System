@@ -12,6 +12,7 @@ import PostPage from "./pages/PostPage";
 import DocumentPage from "./pages/DocumentPage";
 import DocumentsPage from "./pages/DocumentsPage";
 import GuidePage from "./pages/GuidePage";
+import GuidesPage from "./pages/GuidesPage";
 import LoginPage from "./pages/LoginPage";
 import PartnerGuidePage from "./pages/PartnerGuidePage";
 import QuotesPage from "./pages/QuotesPage";
@@ -29,6 +30,7 @@ export default function App() {
       <Route path="/" element={<Protected><DashboardPage /></Protected>} />
       <Route path="/documents" element={<Protected><DocumentsPage /></Protected>} />
       <Route path="/documents/:id" element={<Protected><DocumentPage /></Protected>} />
+      <Route path="/guides" element={<Protected><GuidesPage /></Protected>} />
       <Route path="/guides/:id" element={<Protected><GuidePage /></Protected>} />
       <Route path="/partner-guides/:id" element={<Protected><PartnerGuidePage /></Protected>} />
       <Route path="/shared" element={<Protected><SharedPage /></Protected>} />
@@ -64,7 +66,7 @@ function Protected({ children, roles, sales }: { children: ReactNode; roles?: Ro
         <nav>
           <NavLink to="/" end>홈</NavLink>
           <DocsMenu />
-          {!isSales && <NavLink to="/shared">가이드 공유</NavLink>}
+          {!isSales && <GuidesMenu />}
           {(isSales || isAdmin) && <NavLink to="/quotes">견적서</NavLink>}
           <NavLink to="/community">커뮤니티</NavLink>
           {SETTINGS_ROLES.includes(me.role) && (!isSales || isAdmin) && <NavLink to="/settings">설정</NavLink>}
@@ -81,9 +83,26 @@ function Protected({ children, roles, sales }: { children: ReactNode; roles?: Ro
   );
 }
 
-/** 상단 '문서' 메뉴: 마우스를 올리면 규격서·기술 가이드·브로슈어가 펼쳐진다 (누르면 문서 화면).
- *  메뉴 줄이 가로 스크롤 영역이라 잘리지 않도록 펼침 목록은 body 에 띄운다. */
+type MenuItem = { key: string; label: string; to: string; active: boolean };
+
+/** 상단 '문서' 메뉴: 마우스를 올리면 규격서·기술 가이드·브로슈어가 펼쳐진다 (누르면 문서 화면). */
 function DocsMenu() {
+  const { pathname, search } = useLocation();
+  const currentType = pathname === "/documents" ? (new URLSearchParams(search).get("type") ?? "guide") : null;
+  const items = DOC_TYPES.map((t) => ({ key: t.key, label: t.label, to: `/documents?type=${t.key}`, active: currentType === t.key }));
+  return <HoverMenu to="/documents" label="문서" items={items} />;
+}
+
+/** 상단 '가이드' 메뉴: 누르면 등록된 가이드, 마우스를 올리면 '가이드 공유'가 펼쳐진다. */
+function GuidesMenu() {
+  const { pathname } = useLocation();
+  const items = [{ key: "shared", label: "가이드 공유", to: "/shared", active: pathname === "/shared" }];
+  return <HoverMenu to="/guides" label="가이드" items={items} alsoActive={pathname === "/shared"} />;
+}
+
+/** 마우스를 올리면 하위 메뉴가 펼쳐지는 상단 메뉴.
+ *  메뉴 줄이 가로 스크롤 영역이라 잘리지 않도록 펼침 목록은 body 에 띄운다. */
+function HoverMenu({ to, label, items, alsoActive = false }: { to: string; label: string; items: MenuItem[]; alsoActive?: boolean }) {
   const navigate = useNavigate();
   const { pathname, search } = useLocation();
   const linkRef = useRef<HTMLAnchorElement>(null);
@@ -101,31 +120,33 @@ function DocsMenu() {
   };
   useEffect(() => setPos(null), [pathname, search]);
   useEffect(() => () => window.clearTimeout(timer.current), []);
-  const currentType = pathname === "/documents" ? (new URLSearchParams(search).get("type") ?? "guide") : null;
 
   return (
     <>
-      <NavLink ref={linkRef} to="/documents" onMouseEnter={show} onMouseLeave={hide} onFocus={show} onBlur={hide} aria-haspopup="menu">
-        문서
+      <NavLink
+        ref={linkRef}
+        to={to}
+        className={({ isActive }) => (isActive || alsoActive ? "active" : "")}
+        onMouseEnter={show}
+        onMouseLeave={hide}
+        onFocus={show}
+        onBlur={hide}
+        aria-haspopup="menu"
+      >
+        {label}
       </NavLink>
       {pos &&
         createPortal(
-          <div
-            className="dropdown nav-dropdown"
-            role="menu"
-            style={{ left: pos.left, top: pos.top }}
-            onMouseEnter={show}
-            onMouseLeave={hide}
-          >
-            {DOC_TYPES.map((t) => (
+          <div className="dropdown nav-dropdown" role="menu" style={{ left: pos.left, top: pos.top }} onMouseEnter={show} onMouseLeave={hide}>
+            {items.map((item) => (
               <button
-                key={t.key}
-                className={`dropdown-item${currentType === t.key ? " active" : ""}`}
+                key={item.key}
+                className={`dropdown-item${item.active ? " active" : ""}`}
                 role="menuitem"
                 onMouseDown={(e) => e.preventDefault()}
-                onClick={() => navigate(`/documents?type=${t.key}`)}
+                onClick={() => navigate(item.to)}
               >
-                {t.label}
+                {item.label}
               </button>
             ))}
           </div>,

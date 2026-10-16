@@ -57,6 +57,7 @@ export interface DocumentSummary {
   vendor_name: string;
   title: string | null;
   doc_type: "spec" | "guide" | "brochure";
+  guide_kind: "technical" | "troubleshooting" | null;
   description: string | null;
   uploaded_by_name: string | null;
   source_type: "pdf" | "docx" | "pptx" | "url";

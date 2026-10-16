@@ -42,3 +42,32 @@ def test_documents_by_type_and_vendor(client, tmp_path: Path):
     assert client.post(
         "/api/documents", data={"vendor_id": vendor["id"], "doc_type": "unknown", "url": "https://example.com"}, headers=user
     ).status_code == 422
+
+
+def test_guide_kinds(client, tmp_path: Path):
+    """기술 가이드 문서는 기술 가이드 / 트러블 슈팅 가이드로 나뉜다 (가이드 화면의 종류 선택)."""
+    admin = login(client, *ADMIN)
+    partner, vendor = _partner_with_vendor(client, admin, "가이드종류파트너", "KindVendor")
+    user = _signup_and_approve(client, admin, "kinds@k.example.com", partner["id"])
+    src = tmp_path / "v.docx"
+    _make_vendor_docx(src)
+    for title, kind in [("설치 가이드", "technical"), ("장애 대응", "troubleshooting"), ("기본값", None)]:
+        data = {"vendor_id": vendor["id"], "doc_type": "guide", "title": title}
+        if kind:
+            data["guide_kind"] = kind
+        with src.open("rb") as f:
+            assert client.post("/api/documents", data=data, files={"file": ("v.docx", f)}, headers=user).status_code == 201
+    with src.open("rb") as f:
+        spec = client.post(
+            "/api/documents", data={"vendor_id": vendor["id"], "doc_type": "spec", "guide_kind": "troubleshooting", "title": "규격"},
+            files={"file": ("v.docx", f)}, headers=user,
+        ).json()
+    assert spec["guide_kind"] is None  # 가이드가 아닌 문서에는 종류가 없다
+    run_pending_jobs()
+
+    def titles(query: str) -> list[str]:
+        return sorted(d["title"] for d in client.get(f"/api/documents?doc_type=guide&vendor_id={vendor['id']}{query}", headers=user).json())
+
+    assert titles("") == ["기본값", "설치 가이드", "장애 대응"]
+    assert titles("&guide_kind=technical") == ["기본값", "설치 가이드"]
+    assert titles("&guide_kind=troubleshooting") == ["장애 대응"]
