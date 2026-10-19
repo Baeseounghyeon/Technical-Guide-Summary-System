@@ -282,7 +282,12 @@ def test_quote_builder_steps(client, tmp_path: Path):
     assert ws["B7"].value == "파트너사 귀중" and ws["B8"].value.startswith("프로젝트명 : [예시은행]")
     # 회사명·주소·연락처·담당자 줄은 작성자 정보로 (양식에는 비어 있음)
     assert ws["B1"].value == "예시 주식회사" and ws["J1"].value == "[00000] 예시시 예시로 1" and ws["J2"].value == "Tel : 02-000-0000"
-    assert ws["B2"].value == "솔루션사업본부/ 영업 담당 / 010-0000-0000 / s@unipoint.co.kr" and not ws._images
+    assert ws["B2"].value == "솔루션사업본부/ 영업 담당 / 010-0000-0000 / s@unipoint.co.kr"
+    # 양식의 도형(제목 상자·회사 상자)과 직인 그림이 그대로 남는다 (openpyxl 이 버리는 도형은 따로 옮긴다)
+    import zipfile
+
+    drawing = zipfile.ZipFile(io.BytesIO(xlsx.content)).read("xl/drawings/drawing1.xml").decode()
+    assert "QUOTATION" in drawing and "<xdr:sp" in drawing and len(ws._images) == 1
     assert ws["N18"].value == 14675.68 and ws["O18"].value == 1360 and ws["G18"].value == "=N18*O18*2.3"
     assert ws["H19"].value == "=G19*(1-I19)" and ws["S19"].value == "=R19/H19" and ws["P9"].value == 20000000
     # 양식의 품목 표(18~21행) 안에 채운다: 2건이면 20·21행은 빈 채로, 합계 위치는 그대로
@@ -362,3 +367,14 @@ def test_quote_line_order():
     assert [(l["no"], l["quantity"], l["contract"]) for l in lines] == [
         (1, 2, "ABCD1-100005"), (2, 4, "ABCD1-100003"), (3, 4, "ABCD1-100002"), (4, 4, "ABCD1-100001"), (5, 6, "ABCD1-100004"),
     ]
+
+
+def test_shift_formula_when_rows_added():
+    """품목 행을 늘리면 그 아래 칸을 가리키는 참조는 내리고, 마지막 품목 행까지의 범위는 늘린다 (따옴표 안 글자는 그대로)."""
+    from app.services.unipoint_quote import shift_formula
+
+    assert shift_formula("=SUM(M18:M21)", 22, 2) == "=SUM(M18:M23)"
+    assert shift_formula("=SUM(H18:H22)", 22, 2) == "=SUM(H18:H24)"
+    assert shift_formula("=M22*N22", 22, 2) == "=M24*N24"
+    assert shift_formula("=N21*O21*2.3", 22, 2) == "=N21*O21*2.3"
+    assert shift_formula('="제안금액 : 일금"&NUMBERSTRING(H24,1)&"원정(부가세 포함)"', 22, 2) == '="제안금액 : 일금"&NUMBERSTRING(H26,1)&"원정(부가세 포함)"'

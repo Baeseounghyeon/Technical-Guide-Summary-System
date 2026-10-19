@@ -32,6 +32,7 @@ from openpyxl.utils import column_index_from_string, get_column_letter
 from openpyxl.utils.cell import range_boundaries
 
 from .thales_pdf import PURCHASE_COLUMNS
+from .xlsx_drawing import put_drawing, read_drawing, shift_anchors
 
 TEMPLATE = Path(__file__).resolve().parents[1] / "assets" / "quote_unipoint.xlsx"
 TEMPLATE_KEY = "assets/quote_unipoint.xlsx"
@@ -228,6 +229,30 @@ class QuoteDoc:
 # ---------- 엑셀 ----------
 
 
+_REF = re.compile(r"(?<![A-Za-z_\d.])(\$?[A-Z]{1,3})(\$?)(\d+)(?::(\$?[A-Z]{1,3})(\$?)(\d+))?(?![\d(])")
+
+
+def shift_formula(formula: str, at: int, count: int) -> str:
+    """at 행 앞에 count 행을 넣었을 때의 수식. 따옴표 안 글자는 건드리지 않는다.
+    - at 이상 행을 가리키는 참조는 count 만큼 내린다.
+    - at-1 행(마지막 품목 행)까지 이르는 범위(예: SUM(M18:M21))는 끝을 늘려 새 행을 포함한다."""
+
+    def fix(m: re.Match) -> str:
+        c1, a1, r1, c2, a2, r2 = m.groups()
+        r1 = int(r1)
+        if c2 is None:
+            return f"{c1}{a1}{r1 + count if r1 >= at else r1}"
+        r2 = int(r2)
+        if r1 >= at:
+            r1, r2 = r1 + count, r2 + count
+        elif r2 >= at - 1:
+            r2 += count
+        return f"{c1}{a1}{r1}:{c2}{a2}{r2}"
+
+    parts = formula.split('"')
+    return '"'.join(_REF.sub(fix, part) if i % 2 == 0 else part for i, part in enumerate(parts))
+
+
 def _shift_rows(ws, at: int, count: int) -> None:
     """at 행 앞에 count 개 행을 넣는다. openpyxl 이 옮기지 않는 병합 칸·행 높이·그림·인쇄 영역도 함께 옮긴다."""
     if count <= 0:
@@ -237,6 +262,11 @@ def _shift_rows(ws, at: int, count: int) -> None:
     for m in merged:
         ws.merged_cells.remove(m)
     ws.insert_rows(at, count)
+    # openpyxl 은 수식 참조를 고치지 않는다 → 넣은 행 아래를 가리키는 참조는 내리고, 품목 끝(at-1)까지의 범위는 늘린다
+    for row in ws.iter_rows():
+        for c in row:
+            if isinstance(c.value, str) and c.value.startswith("="):
+                c.value = shift_formula(c.value, at, count)
     for m in merged:
         m.shift(0, count)
         ws.merged_cells.add(m)
@@ -362,10 +392,13 @@ def build_xlsx(q: QuoteDoc, template: Path | None = None) -> tuple[bytes, dict[s
     (견적서 엑셀, 미리보기용 수식 칸 계산값 {칸: 값})"""
     if template is None:
         with template_path() as path:
-            wb = load_workbook(str(path))
+            raw = path.read_bytes()
     else:
-        wb = load_workbook(str(template))
+        raw = Path(template).read_bytes()
+    wb = load_workbook(io.BytesIO(raw))
+    drawing = read_drawing(raw)  # 제목 상자·회사 상자 같은 도형은 openpyxl 이 버리므로 따로 옮긴다
     ws = wb.worksheets[0]
+    ws._images = []  # 그림도 드로잉과 함께 옮긴다 (두 번 들어가지 않게)
     L = find_layout(ws)
     if L is None:
         raise ValueError("견적서 양식에서 품목 표('Product Number' 머리글, '- 이하여백 -', 제안가 합계)를 찾지 못했습니다.")
@@ -373,6 +406,8 @@ def build_xlsx(q: QuoteDoc, template: Path | None = None) -> tuple[bytes, dict[s
     extra = len(q.lines) - capacity
     if extra > 0:  # 표보다 품목이 많으면 '- 이하여백 -' 위에 행을 늘린다 (마지막 품목 행 서식으로)
         _shift_rows(ws, L.blank, extra)
+        if drawing:
+            drawing = {**drawing, "xml": shift_anchors(drawing["xml"], L.blank, extra)}
         src = L.blank - 1
         for r in range(L.blank, L.blank + extra):
             for col in range(1, ws.max_column + 1):
@@ -439,7 +474,10 @@ def build_xlsx(q: QuoteDoc, template: Path | None = None) -> tuple[bytes, dict[s
     wb.calculation.fullCalcOnLoad = True  # 엑셀로 열면 모든 수식을 다시 계산한다
     out = io.BytesIO()
     wb.save(out)
-    return out.getvalue(), calc
+    data = out.getvalue()
+    if drawing:
+        data = put_drawing(data, drawing)
+    return data, calc
 
 
 # ---------- 미리보기 (인쇄 영역 A1:J) ----------
@@ -516,7 +554,7 @@ def preview_html(data: bytes, calc: dict) -> str:
         "<style>body{font-family:'Malgun Gothic',sans-serif;color:#111;margin:12px;font-size:12px}"
         "table{border-collapse:collapse;table-layout:fixed}td{padding:2px 4px;white-space:pre-wrap;vertical-align:middle}</style>"
         f"<table><colgroup>{cols}</colgroup>{''.join(rows)}</table>"
-        "<p style='color:#777;font-size:11px'>※ 로고·직인 그림은 미리보기에 나오지 않습니다(엑셀 파일에는 들어 있습니다). 매입·GP 칸(인쇄 영역 밖)도 엑셀 파일에만 있습니다.</p>"
+        "<p style='color:#777;font-size:11px'>※ 제목 상자·회사 상자 같은 도형과 그림은 미리보기에 나오지 않습니다(엑셀 파일에는 그대로 들어 있습니다). 매입·GP 칸(인쇄 영역 밖)도 엑셀 파일에만 있습니다.</p>"
     )
 
 
