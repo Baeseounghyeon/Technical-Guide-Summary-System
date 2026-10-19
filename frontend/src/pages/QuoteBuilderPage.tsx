@@ -25,7 +25,8 @@ interface EditableItems extends Items {
   checked: boolean[];
 }
 type Picked = { id: number; title: string | null };
-type Author = { name: string; company: string; department: string; email: string; phone: string };
+/** 견적서 상단: B1 회사명 · J1 주소 · J2 연락처 · B2 담당자 줄(부서/ 이름 / 전화 / 메일) */
+type Author = { name: string; company: string; department: string; email: string; phone: string; address: string; contact: string };
 type PurchaseMeta = { quote_number?: string; date_quoted?: string; end_user?: string; partner?: string; quote_total?: string };
 /** 매입 견적 PDF 한 건 = 견적서 한 행 */
 interface Purchase {
@@ -86,13 +87,31 @@ interface GeneratedQuote {
 }
 
 const STEPS = ["견적서 양식", "제품 가격표 선택", "가격표 항목", "매입 견적 선택", "매입 라인 확인", "작성자 정보", "최종 확인·생성"];
-const AUTHOR_FIELDS: { key: keyof Author; label: string }[] = [
-  { key: "name", label: "작성자" },
+const AUTHOR_FIELDS: { key: keyof Author; label: string; placeholder?: string }[] = [
+  { key: "company", label: "회사명 (B1)", placeholder: "예: 주식회사 ○○ (○○ Corp.)" },
+  { key: "address", label: "회사 주소 (J1)", placeholder: "예: [우편번호] 주소" },
+  { key: "contact", label: "회사 연락처 (J2)", placeholder: "예: Tel : 02-0000-0000  Fax : 02-0000-0000" },
   { key: "department", label: "부서" },
+  { key: "name", label: "작성자" },
   { key: "phone", label: "전화번호" },
   { key: "email", label: "이메일" },
-  { key: "company", label: "소속" },
 ];
+// 회사명·주소·연락처는 견적서마다 같으므로 이 브라우저에 기억해 두고 다음에 채운다
+const COMPANY_KEY = "quote-company-info";
+function savedCompany(): Partial<Author> {
+  try {
+    return JSON.parse(localStorage.getItem(COMPANY_KEY) ?? "{}");
+  } catch {
+    return {};
+  }
+}
+function saveCompany(a: Author) {
+  try {
+    localStorage.setItem(COMPANY_KEY, JSON.stringify({ company: a.company, address: a.address, contact: a.contact }));
+  } catch {
+    /* 저장 못 해도 견적서 작성에는 지장 없음 */
+  }
+}
 type ImportTab = "template" | "registered" | "price_list" | "purchase" | "generated";
 const IMPORT_TABS: { key: ImportTab; label: string }[] = [
   { key: "template", label: "견적서 양식" },
@@ -164,7 +183,7 @@ export default function QuoteBuilderPage() {
   const [price, setPrice] = useState<EditableItems | null>(null);
   const [priceSkipped, setPriceSkipped] = useState(false);
   const [purchases, setPurchases] = useState<Purchase[]>([]);
-  const [author, setAuthor] = useState<Author>({ name: "", company: "", department: "", email: "", phone: "" });
+  const [author, setAuthor] = useState<Author>({ name: "", company: "", department: "", email: "", phone: "", address: "", contact: "" });
   const [title, setTitle] = useState("");
   const [titleTouched, setTitleTouched] = useState(false);
   const [recipient, setRecipient] = useState("");
@@ -177,8 +196,18 @@ export default function QuoteBuilderPage() {
 
   // 6단계: 로그인한 사용자 정보로 작성자 칸을 채운다
   useEffect(() => {
-    if (me && !author.name)
-      setAuthor({ name: me.name, company: me.partner_name ?? me.company_name ?? "", department: me.department ?? "", email: me.email, phone: me.phone ?? "" });
+    if (me && !author.name) {
+      const saved = savedCompany();
+      setAuthor({
+        name: me.name,
+        company: saved.company || me.partner_name || me.company_name || "",
+        address: saved.address ?? "",
+        contact: saved.contact ?? "",
+        department: me.department ?? "",
+        email: me.email,
+        phone: me.phone ?? "",
+      });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [me]);
   useEffect(() => {
@@ -314,7 +343,7 @@ export default function QuoteBuilderPage() {
     3: "참고할 제품을 체크하세요. 검색으로 제품 번호·이름을 찾을 수 있습니다.",
     4: "위 '가져오기 > 매입 금액'에서 이번 견적에 넣을 매입 견적(Thales 견적서 PDF)을 모두 체크하세요. 한 건이 견적서 한 행이 됩니다.",
     5: "매입 견적마다 금액에 넣을 라인(포함)과 견적서에 보일 대표 라인을 고르세요. 값이 다르면(예: 기간이 PDF에 없을 때) 칸을 눌러 고치세요.",
-    6: "로그인한 사용자 정보로 채웠습니다. 견적서 상단 담당자 줄(부서/ 이름 / 전화 / 메일)에 들어갑니다.",
+    6: "견적서 상단의 회사명·주소·연락처와 담당자 줄(부서/ 이름 / 전화 / 메일)에 들어갑니다. 이름·부서·전화·메일은 로그인한 사용자 정보로, 회사 정보는 지난번 입력값으로 채웠습니다.",
     7: "수신처·프로젝트명·환율·목표 금액을 확인하고 미리보기를 본 뒤 생성하세요. 고칠 곳이 있으면 위 단계 번호를 누르세요.",
   };
 
@@ -392,10 +421,18 @@ export default function QuoteBuilderPage() {
         {step === 6 && (
           <div className="form-row">
             {AUTHOR_FIELDS.map((f) => (
-              <label key={f.key}>
+              <label key={f.key} style={["company", "address", "contact"].includes(f.key) ? { flex: "1 1 320px" } : undefined}>
                 {f.label}
                 {f.key === "name" && <span className="required"> *</span>}
-                <input value={author[f.key]} onChange={(e) => setAuthor({ ...author, [f.key]: e.target.value })} />
+                <input
+                  value={author[f.key]}
+                  placeholder={f.placeholder}
+                  onChange={(e) => {
+                    const next = { ...author, [f.key]: e.target.value };
+                    setAuthor(next);
+                    if (["company", "address", "contact"].includes(f.key)) saveCompany(next);
+                  }}
+                />
               </label>
             ))}
           </div>

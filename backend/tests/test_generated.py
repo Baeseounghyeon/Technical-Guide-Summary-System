@@ -254,7 +254,8 @@ def test_quote_builder_steps(client, tmp_path: Path):
             {"document_id": q1["id"], "meta": p1["meta"], "rows": p1["rows"], "included": [True], "main": 0},
             {"document_id": q2["id"], "meta": p2["meta"], "rows": p2["rows"], "included": [True, True], "main": 1},
         ],
-        "author": {"name": "영업 담당", "department": "솔루션사업본부", "phone": "010-0000-0000", "email": "s@unipoint.co.kr"},
+        "author": {"name": "영업 담당", "department": "솔루션사업본부", "phone": "010-0000-0000", "email": "s@unipoint.co.kr",
+                   "company": "예시 주식회사", "address": "[00000] 예시시 예시로 1", "contact": "Tel : 02-000-0000"},
         "settings": {"exchange_rate": 1360, "multiplier": 2.3, "target_total": 20000000},
     }
     preview = client.post("/api/quote-builder/preview", json=body, headers=sales)
@@ -279,6 +280,9 @@ def test_quote_builder_steps(client, tmp_path: Path):
     assert xlsx.status_code == 200
     ws = load_workbook(io.BytesIO(xlsx.content)).worksheets[0]
     assert ws["B7"].value == "파트너사 귀중" and ws["B8"].value.startswith("프로젝트명 : [예시은행]")
+    # 회사명·주소·연락처·담당자 줄은 작성자 정보로 (양식에는 비어 있음)
+    assert ws["B1"].value == "예시 주식회사" and ws["J1"].value == "[00000] 예시시 예시로 1" and ws["J2"].value == "Tel : 02-000-0000"
+    assert ws["B2"].value == "솔루션사업본부/ 영업 담당 / 010-0000-0000 / s@unipoint.co.kr" and not ws._images
     assert ws["N18"].value == 14675.68 and ws["O18"].value == 1360 and ws["G18"].value == "=N18*O18*2.3"
     assert ws["H19"].value == "=G19*(1-I19)" and ws["S19"].value == "=R19/H19" and ws["P9"].value == 20000000
     assert ws["D20"].value == "- 이하여백 -" and ws["H21"].value == "=SUM(H18:H20)" and ws["H22"].value == "=H21*1.1"

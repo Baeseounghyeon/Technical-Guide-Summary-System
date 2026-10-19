@@ -237,6 +237,12 @@ def _shift_rows(ws, at: int, count: int) -> None:
         ws.print_area = f"{get_column_letter(min_col)}{min_row}:{get_column_letter(max_col)}{max_row + count}"
 
 
+def author_line(a: dict) -> str:
+    """B2 담당자 줄: '부서/ 이름 / 전화 / 메일' (원래 견적서 표기)."""
+    head = f"{a.get('department', '')}/ {a.get('name', '')}" if a.get("department") else a.get("name", "")
+    return " / ".join(x for x in (head, a.get("phone", ""), a.get("email", "")) if x)
+
+
 def build_xlsx(q: QuoteDoc) -> tuple[bytes, dict[str, object]]:
     """견적서 엑셀과, 미리보기용 수식 칸 계산값 {칸: 값}."""
     with template_path() as path:
@@ -256,7 +262,11 @@ def build_xlsx(q: QuoteDoc) -> tuple[bytes, dict[str, object]]:
     s = q.settings
     calc: dict[str, object] = {}
     a = q.author
-    ws["B2"] = f"{a.get('department', '')}/ {a.get('name', '')} / {a.get('phone', '')} / {a.get('email', '')}"
+    # 회사명·주소·연락처·담당자 줄은 양식에서 비워 두고 웹의 작성자 정보로 채운다
+    ws["B1"] = a.get("company", "")
+    ws["J1"] = a.get("address", "")
+    ws["J2"] = a.get("contact", "")
+    ws["B2"] = author_line(a)
     ws["B7"] = f"{q.recipient} 귀중"
     ws["B8"] = f"프로젝트명 : {q.project}"
     ws["H8"] = datetime.strptime(q.date, "%Y-%m-%d")
@@ -380,9 +390,6 @@ def preview_html(data: bytes, calc: dict) -> str:
 
 # ---------- PDF (고객용 A~J 열 내용, 엑셀 견적서와 같은 순서) ----------
 
-REMARKS_FALLBACK = ["- 상기 견적 할인율은 본 건에 한해 적용됩니다."]
-
-
 def build_pdf(q: QuoteDoc) -> bytes:
     """고객에게 보내는 내용(인쇄 영역 A~J)만 담는다. 매입·GP 는 넣지 않는다."""
     with template_path() as path:
@@ -390,7 +397,8 @@ def build_pdf(q: QuoteDoc) -> bytes:
     ws = wb.worksheets[0]
     esc = html.escape
     fixed = lambda ref: esc(str(ws[ref].value or ""))  # noqa: E731 — 양식의 고정 문구
-    remarks = [ws.cell(row=r, column=2).value for r in range(25, 28) if ws.cell(row=r, column=2).value] or REMARKS_FALLBACK
+    # 양식에 남아 있는 Remark 문구 (합계 아래 B열)
+    remarks = [ws.cell(row=r, column=2).value for r in range(22, ws.max_row + 1) if ws.cell(row=r, column=2).value]
     a = q.author
     th = "border:1px solid #666;background-color:#DCE3EE;padding:3px;font-size:7.5pt;text-align:center;font-weight:bold"
     td = "border:1px solid #666;padding:3px;font-size:7.5pt;vertical-align:middle"
@@ -415,11 +423,11 @@ def build_pdf(q: QuoteDoc) -> bytes:
         body += (f'<tr><td colspan="7" style="{td};text-align:center;font-weight:bold">{label}</td>'
                  f'<td style="{td};text-align:right;font-weight:bold">{value:,.0f}</td><td colspan="2" style="{td}"></td></tr>')
     date = datetime.strptime(q.date, "%Y-%m-%d")
-    terms = "".join(f'<p style="margin:1px 0;font-size:9pt">{fixed(ref)}</p>' for ref in ("B10", "B11", "B12", "B13", "B14"))
+    terms = "".join(f'<p style="margin:1px 0;font-size:9pt">{fixed(ref)}</p>' for ref in ("B10", "B11", "B12", "B13", "B14") if ws[ref].value)
     doc_html = (
-        f'<p style="font-size:10pt;font-weight:bold;margin:0">{fixed("B1")}</p>'
-        f'<p style="font-size:8.5pt;margin:0">{esc(a.get("department", ""))}/ {esc(a.get("name", ""))} / {esc(a.get("phone", ""))} / {esc(a.get("email", ""))}</p>'
-        f'<p style="font-size:7.5pt;color:#444;margin:0">{fixed("J1")} · {fixed("J2")}</p>'
+        f'<p style="font-size:10pt;font-weight:bold;margin:0">{esc(a.get("company", ""))}</p>'
+        f'<p style="font-size:8.5pt;margin:0">{esc(author_line(a))}</p>'
+        f'<p style="font-size:7.5pt;color:#444;margin:0">{esc(" · ".join(x for x in (a.get("address", ""), a.get("contact", "")) if x))}</p>'
         '<p style="text-align:center;font-size:22pt;font-weight:bold;margin:8px 0 10px 0">견 적 서</p>'
         f'<p style="font-size:13pt;font-weight:bold;margin:0 0 4px 0">{esc(q.recipient)} 귀중</p>'
         f'<p style="font-size:10pt;margin:0">프로젝트명 : {esc(q.project)}</p>'
@@ -428,7 +436,6 @@ def build_pdf(q: QuoteDoc) -> bytes:
         f'<p style="font-size:11pt;font-weight:bold;margin:8px 0 4px 0">제안금액 : 일금{korean_amount(q.totals["vat_included"])}원정(부가세 포함)'
         '<span style="font-size:8pt;font-weight:normal">  ( 단위 : 원 )</span></p>'
         f'<table style="width:100%;border-collapse:collapse"><tr>{head}</tr>{body}</table>'
-        '<p style="font-size:8.5pt;font-weight:bold;margin:10px 0 2px 0">[Remark]</p>'
         + "".join(f'<p style="font-size:8pt;margin:1px 0">{esc(str(t))}</p>' for t in remarks)
     )
     story = pymupdf.Story(html=doc_html, user_css="body{font-family:sans-serif}")

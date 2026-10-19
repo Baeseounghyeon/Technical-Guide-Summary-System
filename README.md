@@ -168,7 +168,9 @@ cd backend; .\.venv\Scripts\python -m app.migrate_to_postgres
     J 'Enhanced MA (계약 번호)', N 포함한 라인 Net Line Total 합(여러 라인이면 Quote Total), O 환율, P 1, M=N*P, Q=N*O*P, G=N*O*배수(2.3), H=G*(1-I),
     I 할인율(목표 공급가 P9 로 P10=1-P9/SUM(G) 역산한 값), R=H-Q, S=R/H, 합계 H=SUM, 부가세 포함 =H*1.1, B16 =NUMBERSTRING 제안금액.
     여러 라인인 매입 견적은 대표 라인(기본: 여러 견적에 공통인 대상 제품 중 수량이 큰 라인)의 품명·시리얼·수량을 쓰고 금액은 포함한 라인 합계.
-  - 기본 양식 엑셀(로고·직인 포함)은 공개 저장소에 넣지 않고 앱 저장소(Supabase, 비공개)의 `assets/quote_unipoint.xlsx` 를 쓴다
+  - 기본 양식에는 PDF 로 채우지 않는 고정값(회사명·주소·연락처·담당자 줄·참조/납기/유효기간/결제조건·Remark·로고·직인)이 없다.
+    회사명(B1)·주소(J1)·연락처(J2)·담당자 줄(B2)은 6단계 작성자 정보로 채운다(회사 정보는 브라우저에 기억).
+  - 기본 양식 엑셀은 공개 저장소에 넣지 않고 앱 저장소(Supabase, 비공개)의 `assets/quote_unipoint.xlsx` 를 쓴다
     (개발 PC 는 git 에서 뺀 `backend/app/assets/quote_unipoint.xlsx`). 양식을 바꾸려면 이 파일을 바꿔 같은 키로 다시 올린다.
   - 직접 올린 양식(Word·Excel)을 고르면 `{{제목}}` `{{작성자}}` 등 자리 표시와 `{{품목표}}` 를 채운다(PDF 는 기본 배치).
 - 생성한 ○○(/specs/created, /quotes/created): 문서별 최신 버전과 버전 이력, 버전마다 PDF·Word 받기, '수정해서 새 버전'(같은 이력의 다음 버전, `generated_documents.root_id`).
