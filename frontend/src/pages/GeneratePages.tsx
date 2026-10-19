@@ -393,7 +393,10 @@ export function GeneratedListPage({ docType }: { docType: FormType }) {
       <div className="page-header">
         <h1>생성한 {label}</h1>
         <p className="muted">
-          {label} 생성에서 만든 문서입니다. 고쳐서 다시 만들면 같은 문서의 다음 버전으로 이력이 쌓입니다. 새로 만들려면 <Link to={`${base}/create`}>{label} 생성</Link>으로 가세요.
+          {docType === "quote"
+            ? "견적서 생성에서 만든 견적서입니다. 엑셀·PDF로 받거나 삭제할 수 있습니다. "
+            : `${label} 생성에서 만든 문서입니다. 고쳐서 다시 만들면 같은 문서의 다음 버전으로 이력이 쌓입니다. `}
+          새로 만들려면 <Link to={`${base}/create`}>{label} 생성</Link>으로 가세요.
         </p>
       </div>
       <section className="card">
@@ -404,9 +407,9 @@ export function GeneratedListPage({ docType }: { docType: FormType }) {
         {groups.size > 0 && docType === "quote" && (
           // 견적서: 제목·가격표·매입 금액·작성자·일시·다운로드·삭제만 (버전·재사용 원본·관리 열 없이)
           <div className="table-wrap">
-            <table style={{ minWidth: 820 }}>
+            <table className="quote-list" style={{ minWidth: 900 }}>
               <thead>
-                <tr><th>문서 제목</th><th>가격표·매입 금액</th><th>작성자</th><th>최종 생성 일시</th><th>다운로드</th><th style={{ width: 64 }}>삭제</th></tr>
+                <tr><th style={{ width: "26%" }}>문서 제목</th><th>가격표·매입 금액</th><th style={{ width: 90 }}>작성자</th><th style={{ width: 170 }}>최종 생성 일시</th><th style={{ width: 110 }}>다운로드</th><th style={{ width: 64 }}>삭제</th></tr>
               </thead>
               <tbody>
                 {[...groups.entries()].map(([root, versions]) => {
@@ -414,7 +417,7 @@ export function GeneratedListPage({ docType }: { docType: FormType }) {
                   return (
                     <tr key={root}>
                       <td><strong>{latest.title}</strong></td>
-                      <td>{attachmentCell(latest)}</td>
+                      <td className="attach-list">{attachmentCell(latest)}</td>
                       <td style={{ whiteSpace: "nowrap" }}>{latest.created_by_name}</td>
                       <td style={{ whiteSpace: "nowrap" }}>{new Date(latest.created_at).toLocaleString()}</td>
                       <td>{downloads(latest)}</td>

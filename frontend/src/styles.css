@@ -465,3 +465,9 @@ a.stat-card { text-decoration: none; }
 .quote-fields input, .quote-fields select { width: 100%; }
 @media (max-width: 1000px) { .quote-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 560px) { .quote-fields { grid-template-columns: 1fr; } .quote-fields .span-2 { grid-column: auto; } }
+
+/* 생성한 견적서 목록: 제목은 넉넉히, 첨부 문서는 한 줄씩(길면 말줄임), 작성자·일시는 줄바꿈 없이 */
+.quote-list { table-layout: fixed; }
+.quote-list td { vertical-align: top; }
+.quote-list .attach-list .actions { flex-direction: column; align-items: flex-start; gap: 2px; }
+.quote-list .attach-list .link { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
