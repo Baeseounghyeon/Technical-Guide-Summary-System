@@ -5,7 +5,7 @@ import { api, download } from "../api";
 import { useAuth } from "../auth";
 import { productLabel } from "../ProductSelect";
 import type { DocumentSummary } from "../types";
-import { DocumentTable } from "./DocumentsPage";
+import { DocumentTable, DownloadIcon, TrashIcon } from "./DocumentsPage";
 import { FORMAT_LABELS } from "./GeneratePages";
 
 interface Template {
@@ -129,13 +129,12 @@ function saveCompany(a: Author) {
     /* 저장 못 해도 견적서 작성에는 지장 없음 */
   }
 }
-type ImportTab = "template" | "registered" | "price_list" | "purchase" | "generated";
+type ImportTab = "template" | "registered" | "price_list" | "purchase";
 const IMPORT_TABS: { key: ImportTab; label: string }[] = [
   { key: "template", label: "견적서 양식" },
   { key: "registered", label: "등록한 견적서" },
   { key: "price_list", label: "제품 가격표" },
   { key: "purchase", label: "매입 금액" },
-  { key: "generated", label: "생성한 견적서" },
 ];
 // 단계마다 가져오기에서 열어 둘 탭
 const STEP_TAB: Record<number, ImportTab> = { 1: "template", 2: "price_list", 4: "purchase" };
@@ -372,7 +371,7 @@ export default function QuoteBuilderPage() {
   });
 
   const stepOk: Record<number, boolean> = {
-    1: templateChosen,
+    1: true, // 양식을 고르지 않으면 기본 양식(유니포인트 견적서)으로 만든다
     2: !!priceDoc || priceSkipped, // 가격표는 참고용이라 건너뛸 수 있다
     3: priceSkipped || (!!price && price.checked.some(Boolean)),
     4: purchases.length > 0 && loadingIds.length === 0,
@@ -381,7 +380,7 @@ export default function QuoteBuilderPage() {
     7: !!title.trim() && !!recipient.trim() && Number(settings.exchange_rate) > 0 && Number(settings.multiplier) > 0,
   };
   const stepHint: Record<number, string> = {
-    1: "위 '가져오기 > 견적서 양식'에서 양식을 고르세요. 기본 양식은 유니포인트 견적서 엑셀입니다.",
+    1: "위 '가져오기 > 견적서 양식'에서 올린 양식을 고르세요. 고르지 않으면 기본 양식(유니포인트 견적서)으로 만듭니다.",
     2: "위 '가져오기 > 제품 가격표'에서 가격표를 고르세요. 가격표는 품명·리스트가 참고용이라 견적 금액 계산에는 쓰지 않습니다(건너뛸 수 있음).",
     3: "참고할 제품을 체크하세요(머리글 칸으로 모두 체크). 가격표는 참고용이라 모두 체크해도 견적서 엑셀에는 들어가지 않습니다.",
     4: "위 '가져오기 > 매입 금액'에서 이번 견적에 넣을 매입 견적(Thales 견적서 PDF)을 모두 체크하세요. 한 건이 견적서 한 행이 됩니다.",
@@ -410,7 +409,7 @@ export default function QuoteBuilderPage() {
             </button>
           ))}
         </div>
-        {tab === "template" && <TemplatesPanel selected={templateChosen ? template?.id ?? 0 : null} onPick={pickTemplate} />}
+        {tab === "template" && <TemplatesPanel selected={template?.id ?? null} onPick={pickTemplate} />}
         {tab === "registered" && (
           <>
             <p className="muted">문서 등록에서 올린 견적서입니다. 참고용으로 열어 보거나 내려받을 수 있습니다.</p>
@@ -424,7 +423,6 @@ export default function QuoteBuilderPage() {
             <DocPicker docType="purchase" multiple checked={[...purchases.map((p) => p.doc.id), ...loadingIds]} onPick={togglePurchase} />
           </>
         )}
-        {tab === "generated" && <GeneratedPicker checked={basedOn?.id ?? null} onPick={loadGenerated} />}
       </section>
 
       <section className="card">
@@ -445,7 +443,7 @@ export default function QuoteBuilderPage() {
 
         {step === 1 && (
           <p>
-            선택한 양식: <strong>{templateChosen ? (template ? `${template.name} (${template.file_ext === "docx" ? "Word" : "Excel"})` : "기본 양식 (유니포인트 견적서 엑셀)") : "아직 고르지 않음"}</strong>
+            선택한 양식: <strong>{template ? `${template.name} (${template.file_ext === "docx" ? "Word" : "Excel"})` : "기본 양식 (유니포인트 견적서)"}</strong>
           </p>
         )}
         {step === 2 && (
@@ -495,7 +493,7 @@ export default function QuoteBuilderPage() {
             setRecipient={setRecipient}
             setDate={setDate}
             setSettings={setSettings}
-            template={templateChosen ? template : undefined}
+            template={template}
             priceDoc={priceDoc}
             purchases={purchases}
             author={author}
@@ -523,6 +521,16 @@ export default function QuoteBuilderPage() {
         )}
       </section>
     </>
+  );
+}
+
+function UploadIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 15V3" />
+      <path d="m7 8 5-5 5 5" />
+      <path d="M5 21h14" />
+    </svg>
   );
 }
 
@@ -571,21 +579,10 @@ function TemplatesPanel({ selected, onPick }: { selected: number | null; onPick:
 
   return (
     <>
-      <p className="muted">
-        기본 양식은 유니포인트 견적서 엑셀입니다. 직접 올리는 양식(Word·Excel)에는 <code>{"{{제목}}"}</code> <code>{"{{작성자}}"}</code> <code>{"{{소속}}"}</code>{" "}
-        <code>{"{{부서}}"}</code> <code>{"{{이메일}}"}</code> <code>{"{{전화번호}}"}</code> <code>{"{{작성일}}"}</code> 를 적어 두면 그 자리에 값이 들어가고,{" "}
-        <code>{"{{품목표}}"}</code> 자리에는 견적 품목 표가 들어갑니다(없으면 문서 끝에 붙음).
-      </p>
       <div className="table-wrap">
         <table style={{ minWidth: 760 }}>
-          <thead><tr><th style={{ width: 48 }}>선택</th><th>양식 이름</th><th>파일</th><th>올린 사람</th><th>변경 일시</th><th>관리</th></tr></thead>
+          <thead><tr><th style={{ width: 48 }}>선택</th><th>양식 이름</th><th>파일</th><th>올린 사람</th><th>변경 일시</th><th style={{ width: 130 }}>받기·변경·삭제</th></tr></thead>
           <tbody>
-            <tr className={selected === 0 ? "highlight" : ""}>
-              <td><input type="radio" name="quote-template" checked={selected === 0} onChange={() => onPick(null)} aria-label="기본 양식" /></td>
-              <td>기본 양식</td>
-              <td className="muted">유니포인트 견적서 엑셀 (견적서_매핑정리 기준, 엑셀·PDF)</td>
-              <td>-</td><td>-</td><td>-</td>
-            </tr>
             {templates.data?.map((t) => (
               <tr key={t.id} className={selected === t.id ? "highlight" : ""}>
                 <td><input type="radio" name="quote-template" checked={selected === t.id} onChange={() => onPick(t)} aria-label={`${t.name} 선택`} /></td>
@@ -594,10 +591,12 @@ function TemplatesPanel({ selected, onPick }: { selected: number | null; onPick:
                 <td>{t.uploaded_by_name}</td>
                 <td style={{ whiteSpace: "nowrap" }}>{new Date(t.updated_at).toLocaleString()}</td>
                 <td style={{ whiteSpace: "nowrap" }}>
-                  <div className="actions">
-                    <button className="link" onClick={() => download(`/quote-templates/${t.id}/download`)}>받기</button>
-                    <label className="link" style={{ cursor: "pointer" }}>
-                      파일 변경
+                  <div className="actions" style={{ gap: 6 }}>
+                    <button className="icon-button sm" title="받기" aria-label={`${t.name} 받기`} onClick={() => download(`/quote-templates/${t.id}/download`)}>
+                      <DownloadIcon />
+                    </button>
+                    <label className="icon-button sm" title="파일 변경" aria-label={`${t.name} 파일 변경`} style={{ cursor: "pointer" }}>
+                      <UploadIcon />
                       <input
                         type="file"
                         accept=".docx,.xlsx"
@@ -610,10 +609,12 @@ function TemplatesPanel({ selected, onPick }: { selected: number | null; onPick:
                       />
                     </label>
                     <button
-                      className="link danger-link"
+                      className="icon-button sm danger"
+                      title="삭제"
+                      aria-label={`${t.name} 삭제`}
                       onClick={() => window.confirm(`'${t.name}' 양식을 삭제할까요?`) && remove.mutate(t.id)}
                     >
-                      삭제
+                      <TrashIcon />
                     </button>
                   </div>
                 </td>
@@ -803,6 +804,28 @@ function PurchaseEditor({ purchases, onChange }: { purchases: Purchase[]; onChan
   );
 }
 
+/** 숫자 칸: 입력하는 대로 세 자리마다 쉼표를 붙여 보여 주고, 값은 쉼표 없이 넘긴다 (예: 1400 → 1,400). */
+function NumberInput({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
+  const show = (v: string) => {
+    if (!v) return "";
+    const [int, dec] = v.split(".");
+    const grouped = (int || "0").replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    return dec !== undefined ? `${grouped}.${dec}` : grouped;
+  };
+  return (
+    <input
+      inputMode="decimal"
+      value={show(value)}
+      placeholder={placeholder}
+      onChange={(e) => {
+        const raw = e.target.value.replace(/[^\d.]/g, "");
+        const [int, ...rest] = raw.split(".");
+        onChange(rest.length ? `${int}.${rest.join("")}` : int);
+      }}
+    />
+  );
+}
+
 /** 7단계: 수신처·프로젝트명·견적일자·환율·목표 금액 확인 → 미리보기 → 형식 골라 생성. 미리보기 뒤 내용을 바꾸면 다시 미리보기. */
 function FinalStep(props: {
   fields: { title: string; recipient: string; date: string; settings: Settings };
@@ -848,7 +871,7 @@ function FinalStep(props: {
   const block = (n: number, label: string, children: ReactNode) => (
     <div className="review-block">
       <div className="summary-head">
-        <strong>({n}) {label}</strong>
+        <strong>{label}</strong>
         <button className="link" onClick={() => props.goStep(n)}>수정</button>
       </div>
       {children}
@@ -857,66 +880,62 @@ function FinalStep(props: {
 
   return (
     <>
-      <div className="form-row">
-        <label style={{ flex: "1 1 420px" }}>
-          프로젝트명 (B8) <span className="required">*</span>
+      <div className="quote-fields">
+        <label className="span-2">
+          <span className="field-label">프로젝트명 (B8) <span className="required">*</span></span>
           <input value={fields.title} onChange={(e) => props.setTitle(e.target.value)} />
         </label>
-        <label style={{ flex: "0 0 220px" }}>
-          수신처 (B7 ○○ 귀중) <span className="required">*</span>
+        <label>
+          <span className="field-label">수신처 (B7 ○○ 귀중) <span className="required">*</span></span>
           <input value={fields.recipient} onChange={(e) => props.setRecipient(e.target.value)} placeholder="예: 파트너사명" />
         </label>
-        <label style={{ flex: "0 0 170px" }}>
-          견적일자 (H8)
+        <label>
+          <span className="field-label">견적일자 (H8)</span>
           <input type="date" value={fields.date} onChange={(e) => props.setDate(e.target.value)} />
         </label>
-      </div>
-      <div className="form-row">
-        <label style={{ flex: "0 0 140px" }}>
-          환율 (O열, 원/USD) <span className="required">*</span>
-          <input inputMode="decimal" value={s.exchange_rate} onChange={(e) => props.setSettings({ ...s, exchange_rate: e.target.value })} />
+        <label>
+          <span className="field-label">환율 (O열, 원/USD) <span className="required">*</span></span>
+          <NumberInput value={s.exchange_rate} onChange={(v) => props.setSettings({ ...s, exchange_rate: v })} />
         </label>
-        <label style={{ flex: "0 0 140px" }}>
-          배수 (금액 = 매입×환율×배수)
-          <input inputMode="decimal" value={s.multiplier} onChange={(e) => props.setSettings({ ...s, multiplier: e.target.value })} />
+        <label>
+          <span className="field-label">배수 (금액 = 매입×환율×배수)</span>
+          <NumberInput value={s.multiplier} onChange={(v) => props.setSettings({ ...s, multiplier: v })} />
         </label>
-        <label style={{ flex: "0 0 200px" }}>
-          할인율 정하는 방법
+        <label>
+          <span className="field-label">할인율 지정 방식</span>
           <select value={s.mode} onChange={(e) => props.setSettings({ ...s, mode: e.target.value as Settings["mode"] })}>
             <option value="target">목표 공급가 합계로 역산 (P9)</option>
             <option value="discount">할인율 직접 입력</option>
           </select>
         </label>
         {s.mode === "target" ? (
-          <label style={{ flex: "0 0 200px" }}>
-            목표 공급가 합계 (원, 부가세 별도)
-            <input inputMode="numeric" value={s.target_total} onChange={(e) => props.setSettings({ ...s, target_total: e.target.value.replace(/[^\d.]/g, "") })} placeholder="예: 163800000" />
+          <label>
+            <span className="field-label">목표 공급가 합계 (원, 부가세 별도)</span>
+            <NumberInput value={s.target_total} onChange={(v) => props.setSettings({ ...s, target_total: v })} placeholder="예: 163,800,000" />
           </label>
         ) : (
-          <label style={{ flex: "0 0 140px" }}>
-            할인율 (%)
-            <input inputMode="decimal" value={s.discount_pct} onChange={(e) => props.setSettings({ ...s, discount_pct: e.target.value })} />
+          <label>
+            <span className="field-label">할인율 (%)</span>
+            <NumberInput value={s.discount_pct} onChange={(v) => props.setSettings({ ...s, discount_pct: v })} />
           </label>
         )}
+        <label>
+          <span className="field-label">당시 환율 (P12, 참고)</span>
+          <NumberInput value={s.current_rate} onChange={(v) => props.setSettings({ ...s, current_rate: v })} placeholder="예: 1,400" />
+        </label>
+        <label>
+          <span className="field-label">참고 금액 1 (U14)</span>
+          <NumberInput value={s.ref_amount_1} onChange={(v) => props.setSettings({ ...s, ref_amount_1: v })} placeholder="T13 = 4,000,000 ÷ U14" />
+        </label>
+        <label>
+          <span className="field-label">참고 금액 2 (U15)</span>
+          <NumberInput value={s.ref_amount_2} onChange={(v) => props.setSettings({ ...s, ref_amount_2: v })} />
+        </label>
       </div>
-      <div className="form-row">
-        <label style={{ flex: "0 0 160px" }}>
-          당시 환율 (P12, 참고)
-          <input inputMode="decimal" value={s.current_rate} onChange={(e) => props.setSettings({ ...s, current_rate: e.target.value.replace(/[^\d.]/g, "") })} placeholder="예: 1400" />
-        </label>
-        <label style={{ flex: "0 0 200px" }}>
-          참고 금액 1 (U14)
-          <input inputMode="numeric" value={s.ref_amount_1} onChange={(e) => props.setSettings({ ...s, ref_amount_1: e.target.value.replace(/[^\d.]/g, "") })} placeholder="T13 = 4,000,000 ÷ U14" />
-        </label>
-        <label style={{ flex: "0 0 200px" }}>
-          참고 금액 2 (U15)
-          <input inputMode="numeric" value={s.ref_amount_2} onChange={(e) => props.setSettings({ ...s, ref_amount_2: e.target.value.replace(/[^\d.]/g, "") })} />
-        </label>
-        <p className="muted" style={{ flex: "1 1 260px", margin: 0, alignSelf: "flex-end" }}>
-          견적서 인쇄 영역 밖 계산 메모 칸에 들어갑니다(직접 입력, 비우면 빈칸). 수식(Q7·R7·T13·R15 등)은 양식 그대로 둡니다.
-        </p>
-      </div>
-      {block(1, "견적서 양식", <p>{template === undefined ? "아직 고르지 않음" : template ? `${template.name} (${template.file_name})` : "기본 양식 (유니포인트 견적서 엑셀)"}</p>)}
+      <p className="muted" style={{ margin: "0 0 14px" }}>
+        당시 환율·참고 금액은 견적서 인쇄 영역 밖 계산 메모 칸에 들어갑니다(비우면 빈칸). 수식(Q7·R7·T13·R15 등)은 양식 그대로 둡니다.
+      </p>
+      {block(1, "견적서 양식", <p>{template ? `${template.name} (${template.file_name})` : "기본 양식 (유니포인트 견적서)"}</p>)}
       {block(2, "제품 가격표 (참고)", <p>{props.priceDoc?.title ?? (props.priceDoc ? "(제목 없음)" : "사용 안 함")}</p>)}
       {block(4, "매입 견적", <p>{props.purchases.map((p) => p.meta.quote_number || p.doc.title).join(", ") || "아직 고르지 않음"}</p>)}
       {block(6, "작성자 정보", <p>{AUTHOR_FIELDS.map((f) => `${f.label}: ${props.author[f.key] || "-"}`).join(" · ")}</p>)}
@@ -1006,31 +1025,3 @@ function FinalStep(props: {
   );
 }
 
-/** 가져오기 > 생성한 견적서: 이전에 만든 견적서를 불러와 고쳐 다음 버전으로 만든다. */
-function GeneratedPicker({ checked, onPick }: { checked: number | null; onPick: (g: GeneratedQuote) => void }) {
-  const rows = useQuery({ queryKey: ["generated", "quote"], queryFn: () => api<GeneratedQuote[]>("/generated?doc_type=quote") });
-  if (rows.isLoading) return <p className="muted">불러오는 중…</p>;
-  if (rows.error) return <p className="error">{rows.error.message}</p>;
-  if (!rows.data?.length) return <p className="muted">아직 생성한 견적서가 없습니다.</p>;
-  return (
-    <>
-      <p className="muted">고르면 그 견적서 내용이 모두 채워지고 최종 확인 단계로 갑니다. 고쳐서 생성하면 같은 견적서의 다음 버전이 됩니다.</p>
-      <div className="table-wrap">
-        <table style={{ minWidth: 640 }}>
-          <thead><tr><th style={{ width: 48 }}>선택</th><th>견적서 제목</th><th>버전</th><th>양식</th><th>생성 일시</th></tr></thead>
-          <tbody>
-            {rows.data.map((g) => (
-              <tr key={g.id} className={checked === g.id ? "highlight" : ""}>
-                <td><input type="radio" name="pick-generated-quote" checked={checked === g.id} onChange={() => onPick(g)} aria-label={`${g.title} v${g.version} 불러오기`} /></td>
-                <td>{g.title}</td>
-                <td>v{g.version}</td>
-                <td>{g.fields.template_name ?? "기본 양식"}</td>
-                <td style={{ whiteSpace: "nowrap" }}>{new Date(g.created_at).toLocaleString()}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </>
-  );
-}

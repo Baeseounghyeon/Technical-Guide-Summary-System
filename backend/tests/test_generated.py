@@ -305,6 +305,11 @@ def test_quote_builder_steps(client, tmp_path: Path):
     # 9. 고쳐서 다시 생성 → 다음 버전
     v2 = client.post("/api/quote-builder", json={**body, "settings": {"exchange_rate": 1400}, "based_on_id": q["id"]}, headers=sales).json()
     assert v2["version"] == 2 and v2["root_id"] == q["id"]
+    # 삭제: 다른 사람은 못 지우고, 만든 사람이 지우면 모든 버전이 함께 지워진다
+    assert client.delete(f"/api/generated/{v2['id']}", headers=engineer).status_code == 403  # 같은 조직이어도 만든 사람이 아니면
+    assert client.delete(f"/api/generated/{v2['id']}", headers=sales).status_code == 204
+    assert [g["id"] for g in client.get("/api/generated?doc_type=quote", headers=sales).json()] == []
+    q = client.post("/api/quote-builder", json=body, headers=sales).json()
     # 직접 올린 Word 양식으로 만들면 Word·PDF
     v3 = client.post("/api/quote-builder", json={**body, "template_id": tpl["id"]}, headers=sales).json()
     assert v3["formats"] == ["docx", "pdf"]

@@ -230,6 +230,19 @@ def get_generated(generated_id: int, user: User = Depends(get_active_user), db: 
     return _out(db, _get_generated(db, user, generated_id))
 
 
+@router.delete("/generated/{generated_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_generated(generated_id: int, user: User = Depends(get_active_user), db: Session = Depends(get_db)) -> None:
+    """생성한 문서 삭제: 같은 이력(모든 버전)을 함께 지운다. 만든 사람이나 관리자만."""
+    g = _get_generated(db, user, generated_id)
+    root = g.root_id or g.id
+    group = list(db.scalars(select(GeneratedDocument).where(or_(GeneratedDocument.id == root, GeneratedDocument.root_id == root))))
+    if not is_admin(user) and any(x.created_by != user.id for x in group):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "직접 만든 문서만 삭제할 수 있습니다.")
+    for x in sorted(group, key=lambda x: x.version, reverse=True):
+        db.delete(x)
+    db.commit()
+
+
 @router.get("/generated/{generated_id}/download")
 def download_generated(
     generated_id: int,

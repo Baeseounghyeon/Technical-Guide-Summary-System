@@ -5,6 +5,7 @@ import { api, download, postBlob } from "../api";
 import { useAuth } from "../auth";
 import { EXTRA_KINDS, languageLabel, STATUS_LABELS, type ExtraKindKey } from "../labels";
 import { productLabel } from "../ProductSelect";
+import { TrashIcon } from "./DocumentsPage";
 import type { DocumentSummary } from "../types";
 
 export type FormType = "spec" | "quote";
@@ -349,6 +350,12 @@ export function GeneratedListPage({ docType }: { docType: FormType }) {
   const { label, base } = KIND[docType];
   const navigate = useNavigate();
   const rows = useQuery({ queryKey: ["generated", docType], queryFn: () => api<Generated[]>(`/generated?doc_type=${docType}`) });
+  const queryClient = useQueryClient();
+  // 삭제: 같은 이력(모든 버전)을 함께 지운다
+  const remove = useMutation({
+    mutationFn: (id: number) => api(`/generated/${id}`, { method: "DELETE" }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["generated", docType] }),
+  });
   const [open, setOpen] = useState<Set<number>>(new Set());
   // 이력(root_id)별로 묶는다. 목록은 최신순이므로 첫 항목이 최신 버전.
   const groups = new Map<number, Generated[]>();
@@ -393,7 +400,43 @@ export function GeneratedListPage({ docType }: { docType: FormType }) {
         {rows.isLoading && <p className="muted">불러오는 중…</p>}
         {rows.error && <p className="error">{rows.error.message}</p>}
         {rows.data?.length === 0 && <p className="muted">아직 생성한 {label}가 없습니다.</p>}
-        {groups.size > 0 && (
+        {remove.error && <p className="error">{remove.error.message}</p>}
+        {groups.size > 0 && docType === "quote" && (
+          // 견적서: 제목·가격표·매입 금액·작성자·일시·다운로드·삭제만 (버전·재사용 원본·관리 열 없이)
+          <div className="table-wrap">
+            <table style={{ minWidth: 820 }}>
+              <thead>
+                <tr><th>문서 제목</th><th>가격표·매입 금액</th><th>작성자</th><th>최종 생성 일시</th><th>다운로드</th><th style={{ width: 64 }}>삭제</th></tr>
+              </thead>
+              <tbody>
+                {[...groups.entries()].map(([root, versions]) => {
+                  const latest = versions[0];
+                  return (
+                    <tr key={root}>
+                      <td><strong>{latest.title}</strong></td>
+                      <td>{attachmentCell(latest)}</td>
+                      <td style={{ whiteSpace: "nowrap" }}>{latest.created_by_name}</td>
+                      <td style={{ whiteSpace: "nowrap" }}>{new Date(latest.created_at).toLocaleString()}</td>
+                      <td>{downloads(latest)}</td>
+                      <td>
+                        <button
+                          className="icon-button sm danger"
+                          title="삭제"
+                          aria-label={`${latest.title} 삭제`}
+                          disabled={remove.isPending}
+                          onClick={() => window.confirm(`'${latest.title}'을(를) 삭제할까요? 이 견적서의 모든 버전이 함께 지워집니다.`) && remove.mutate(latest.id)}
+                        >
+                          <TrashIcon />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {groups.size > 0 && docType !== "quote" && (
           <div className="table-wrap">
             <table style={{ minWidth: 900 }}>
               <thead>
