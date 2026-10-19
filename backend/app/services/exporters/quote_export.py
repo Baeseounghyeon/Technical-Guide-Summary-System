@@ -56,7 +56,7 @@ class QuoteData:
         return values
 
     def table_by_key(self) -> dict[str, ItemTable]:
-        keys = {"제품 가격표": "{{제품가격표}}", "매입 금액": "{{매입금액}}"}
+        keys = {"제품 가격표": "{{제품가격표}}", "매입 금액": "{{매입금액}}", "견적 품목": "{{품목표}}"}
         return {keys[t.label]: t for t in self.tables if t.label in keys}
 
 
@@ -66,7 +66,7 @@ def formats_for(template_ext: str | None) -> list[str]:
         return ["docx", "pdf"]
     if template_ext == "xlsx":
         return ["xlsx", "pdf"]
-    return ["pdf", "docx", "xlsx"]
+    return ["xlsx", "pdf"]  # 기본 양식: 유니포인트 견적서 엑셀 + PDF
 
 
 # ---------- 기본 양식 ----------

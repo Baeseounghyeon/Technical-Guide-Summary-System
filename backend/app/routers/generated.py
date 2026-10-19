@@ -66,10 +66,11 @@ def _attachment_docs(db: Session, ids: dict | None) -> list[tuple[str, SourceDoc
     """저장된 첨부 id → (종류, 문서). 지워진(휴지통) 문서는 뺀다."""
     out = []
     for kind in EXTRA_KINDS:
-        doc_id = (ids or {}).get(kind)
-        doc = db.get(SourceDocument, doc_id) if doc_id else None
-        if doc is not None and doc.deleted_at is None:
-            out.append((kind, doc))
+        value = (ids or {}).get(kind)
+        for doc_id in value if isinstance(value, list) else [value]:  # 견적서는 매입 견적이 여러 건
+            doc = db.get(SourceDocument, doc_id) if doc_id else None
+            if doc is not None and doc.deleted_at is None:
+                out.append((kind, doc))
     return out
 
 
@@ -256,17 +257,11 @@ def download_generated(
 def _quote_file(db: Session, user: User, g: GeneratedDocument, fmt: str, meta: list) -> bytes:
     """견적서 파일: 양식과 같은 형식이면 양식을 채우고, 아니면 기본 양식. 양식이 지워졌으면 기본 양식."""
     from ..models import QuoteTemplate
-    from ..services.exporters.quote_export import build_quote
-    from ..services.storage import get_storage
-    from .quote_builder import quote_data
+    from .quote_builder import render
 
     fields = g.fields or {}
-    data = quote_data(fields, version=f"v{g.version}", date=f"{g.created_at:%Y-%m-%d}", meta=meta)
     template = db.get(QuoteTemplate, fields["template_id"]) if fields.get("template_id") else None
-    if template is None:
-        return build_quote(data, fmt, None, None)
-    with get_storage().local_path(template.file_path) as path:
-        return build_quote(data, fmt, path, template.file_ext)
+    return render(fields, template, fmt, version=f"v{g.version}")
 
 
 # ---------- 생성한 가이드 (요약 가이드) ----------

@@ -4,7 +4,9 @@
 import io
 from pathlib import Path
 
+import pymupdf
 from docx import Document
+from openpyxl import load_workbook
 
 from app.worker import run_pending_jobs
 
@@ -143,85 +145,152 @@ def _template_docx(path: Path) -> None:
     d.save(str(path))
 
 
+def _thales_price_list_pdf(path: Path) -> None:
+    """Thales 가격표와 같은 배치: SKU | 제품명 | 설명 | $ 가격 이 한 줄."""
+    doc = pymupdf.open()
+    page = doc.new_page()
+    page.insert_text((112, 60), "Thales CSP HSM Price List", fontsize=8)
+    for y, (part, name, desc, price) in enumerate([
+        ("908-000364-003-000", "Luna Network HSM S750", "Luna Network HSM S750 (PED,Enterprise perf,16MB,5 Partitions)", "$      55,176"),
+        ("020-160001-002-000", "HSM", "HSM,Enhanced Maintenance Service,1-2 Year", "21.0%"),
+    ]):
+        for x, text in ((112, part), (170, name), (286, desc), (491, price)):
+            page.insert_text((x, 100 + y * 12), text, fontsize=5)
+    doc.save(str(path))
+
+
+def _thales_quote_pdf(path: Path, number: str, lines: list[tuple], total: str) -> None:
+    """Thales 매입 견적과 같은 머리 정보와 라인 표."""
+    head = ["Line Number", "Maintenance Part Number / Description", "Covered Product Part Number / Description",
+            "Serial Number / External Reference", "Service Coverage", "Quantity", "Maintenance Unit Price", "Net Line Total",
+            "SFDC / Oracle Contract Number"]
+    cell = "border:1px solid black;padding:2px;font-size:6pt"
+    rows = "".join("<tr>" + "".join(f'<td style="{cell}">{v}</td>' for v in r) + "</tr>" for r in lines)
+    html = (
+        f"<p>Quote Number: {number}</p><p>Date Quoted:</p><p>2026-09-21</p>"
+        "<p>Primary Partner Information</p><p>Partner Co., Ltd.</p>"
+        "<p>End User Account Name:</p><p>EndUser Contact:</p><p>Example Bank Inc.</p>"
+        f'<table style="border-collapse:collapse"><tr>{"".join(f"<td style=\'{cell}\'>{h}</td>" for h in head)}</tr>{rows}</table>'
+        f"<p>Quote Total: USD {total}</p>"
+    )
+    story = pymupdf.Story(html=html)
+    writer = pymupdf.DocumentWriter(str(path))
+    page = pymupdf.paper_rect("a4-l")
+    more = True
+    while more:
+        device = writer.begin_page(page)
+        more, _ = story.place(page + (36, 36, -36, -36))
+        story.draw(device)
+        writer.end_page()
+    writer.close()
+
+
 def test_quote_builder_steps(client, tmp_path: Path):
-    """견적서 생성: 양식 등록·변경 → 가격표·매입 금액 항목 뽑기 → 미리보기 → 생성 → 형식별 받기 → 고쳐서 다음 버전."""
+    """견적서_매핑정리.md 기준: 매입 견적 PDF 한 건 = 견적서 한 행, N=Net Line Total(여러 라인이면 합), G=N×O×2.3, 목표 금액으로 할인율 역산."""
     admin = login(client, *ADMIN)
     partner, vendor = _partner_with_vendor(client, admin, "견적생성파트너", "QuoteBuildVendor")
     sales = _sales(client, admin, "qb-sales@q.example.com", partner["id"])
     engineer = _signup_and_approve(client, admin, "qb-eng@q.example.com", partner["id"])
 
-    # 1. 견적서 양식 등록 (Word·Excel 만)
+    # 1. 견적서 양식 (Word·Excel 만, 영업만)
     _template_docx(tmp_path / "tpl.docx")
     with (tmp_path / "tpl.docx").open("rb") as f:
-        r = client.post("/api/quote-templates", data={"name": "기본 견적 양식"}, files={"file": ("tpl.docx", f)}, headers=sales)
-    assert r.status_code == 201, r.text
-    tpl = r.json()
-    assert tpl["file_ext"] == "docx"
+        tpl = client.post("/api/quote-templates", data={"name": "기본 견적 양식"}, files={"file": ("tpl.docx", f)}, headers=sales).json()
     with (tmp_path / "tpl.docx").open("rb") as f:
         assert client.post("/api/quote-templates", data={"name": "x"}, files={"file": ("tpl.pdf", f)}, headers=sales).status_code == 400
     with (tmp_path / "tpl.docx").open("rb") as f:
         assert client.post("/api/quote-templates", data={"name": "x"}, files={"file": ("tpl.docx", f)}, headers=engineer).status_code == 403
     assert client.put(f"/api/quote-templates/{tpl['id']}", data={"name": "견적 양식 v2"}, headers=sales).json()["name"] == "견적 양식 v2"
-    assert [t["name"] for t in client.get("/api/quote-templates", headers=sales).json()] == ["견적 양식 v2"]
 
-    # 2·4. 가격표(Excel)·매입 금액(Word 표) 등록, 3·5. 항목 뽑기
-    _xlsx(tmp_path / "price.xlsx", [("제품", "모델", "단가"), ("Luna HSM", "A790", 30000000), ("CTM", "k570", 12000000.0)])
-    d = Document()
-    t = d.add_table(rows=3, cols=2)
-    for row, values in zip(t.rows, [("품목", "매입가"), ("Luna HSM", "21,000,000"), ("CTM", "8,000,000")]):
-        for cell, v in zip(row.cells, values):
-            cell.text = v
-    d.save(str(tmp_path / "purchase.docx"))
-    with (tmp_path / "price.xlsx").open("rb") as f:
-        price = client.post(
-            "/api/documents", data={"vendor_id": vendor["id"], "doc_type": "price_list", "title": "가격표"},
-            files={"file": ("price.xlsx", f)}, headers=sales,
-        ).json()
-    with (tmp_path / "purchase.docx").open("rb") as f:
-        purchase = client.post(
-            "/api/documents", data={"vendor_id": vendor["id"], "doc_type": "purchase", "title": "매입"},
-            files={"file": ("purchase.docx", f)}, headers=sales,
-        ).json()
+    def upload(path: Path, doc_type: str, title: str) -> dict:
+        with path.open("rb") as f:
+            r = client.post("/api/documents", data={"vendor_id": vendor["id"], "doc_type": doc_type, "title": title}, files={"file": (path.name, f)}, headers=sales)
+        assert r.status_code == 201, r.text
+        return r.json()
+
+    # 2·3. 가격표 (참고용): 제품 번호·제품명·설명·리스트 가격만
+    _thales_price_list_pdf(tmp_path / "price.pdf")
+    price = upload(tmp_path / "price.pdf", "price_list", "HSM 가격표")
+    # 4·5. 매입 견적 2건: 한 건은 라인 1개, 다른 건은 라인 2개 (대표 라인 + 다른 라인)
+    _thales_quote_pdf(tmp_path / "q1.pdf", "Q-1001", [
+        ("1", "020-160001-002-000/HSM, ENHANCED MAINTENANCE SERVICE, 1-2 YEAR",
+         "908-000364-003-000 / LUNA NETWORK HSM S750 (PED, ENTERPRISE PERF, 16MB, GRK-16)", "AB100001, AB100002 (ABCD1-100001)",
+         "12 months", "2.00", "USD 7,337.84", "USD 14,675.68", ""),
+    ], "14,675.68")
+    _thales_quote_pdf(tmp_path / "q2.pdf", "Q-1002", [
+        ("1", "020-160001-002-000/HSM, ENHANCED MAINTENANCE SERVICE, 1-2 YEAR", "908-000393-001-000 / KOREAN ALGORITHMS, LUNA NETWORK HSM 7",
+         "ABCD1-100002", "12 months StartDate = 01-January-2027 EndDate = 31-December-2027", "6.00", "USD 405.87", "USD 2,435.22", ""),
+        ("7", "020-160001-002-000/HSM, ENHANCED MAINTENANCE SERVICE, 1-2 YEAR", "908-000364-003-000 / LUNA NETWORK HSM S750 (PED, ENTERPRISE PERF)",
+         "ABCD1-100002 S/N: AB200001, AB200002", "12 months StartDate = 01-January-2027 EndDate = 31-December-2027", "6.00", "USD 3,039.34",
+         "USD 18,236.04", ""),
+    ], "20,671.26")
+    q1 = upload(tmp_path / "q1.pdf", "purchase", "Q-1001")
+    q2 = upload(tmp_path / "q2.pdf", "purchase", "Q-1002")
     run_pending_jobs()
-    items = client.get(f"/api/documents/{price['id']}/items", headers=sales).json()
-    assert items == {"columns": ["제품", "모델", "단가"], "rows": [["Luna HSM", "A790", "30000000"], ["CTM", "k570", "12000000"]]}
-    p_items = client.get(f"/api/documents/{purchase['id']}/items", headers=sales).json()
-    assert p_items["columns"] == ["품목", "매입가"] and len(p_items["rows"]) == 2
 
-    # 6·7. 작성자 + 미리보기 (양식을 채운 결과)
+    items = client.get(f"/api/documents/{price['id']}/items", headers=sales).json()
+    assert items["columns"] == ["제품 번호", "제품명", "설명", "리스트 가격(USD)"]
+    assert items["rows"][0][:2] == ["908-000364-003-000", "Luna Network HSM S750"] and items["rows"][0][3] == "55176"
+    assert items["rows"][1][3] == "21.0%"
+    p1 = client.get(f"/api/documents/{q1['id']}/items", headers=sales).json()
+    assert p1["meta"]["quote_number"] == "Q-1001" and p1["meta"]["partner"] == "Partner Co., Ltd."
+    assert p1["meta"]["end_user"] == "Example Bank Inc." and p1["meta"]["quote_total"] == "14675.68"
+    row = dict(zip(p1["columns"], p1["rows"][0]))
+    assert row["유지보수 제품 번호"] == "020-160001-002-000" and row["시리얼 번호"] == "AB100001 / AB100002"
+    assert row["계약 번호"] == "ABCD1-100001" and row["수량"] == "2" and row["합계(USD)"] == "14675.68"
+    p2 = client.get(f"/api/documents/{q2['id']}/items", headers=sales).json()
+    assert [r[0] for r in p2["rows"]] == ["1", "7"]
+    assert dict(zip(p2["columns"], p2["rows"][1]))["시작일"] == "2027.01.01"
+
+    # 6·7. 미리보기 → 생성 (환율 1360, 배수 2.3, 목표 공급가 20,000,000)
     body = {
-        "title": "HSM 견적",
-        "template_id": tpl["id"],
+        "title": "[예시은행] Luna Network HSM S750 8식 외 Renewal License 공급 건",
+        "recipient": "파트너사",
+        "date": "2026-09-28",
+        "template_id": None,
         "price_list_id": price["id"],
-        "price": {"columns": items["columns"], "rows": [["Luna HSM", "A790", "29,000,000"]]},  # 체크·수정한 항목
-        "purchase_id": purchase["id"],
-        "purchase": p_items,
-        "author": {"name": "영업 담당", "company": "견적생성파트너", "phone": "010-0000-0000"},
+        "price": {"columns": items["columns"], "rows": items["rows"][:1]},
+        "purchases": [
+            {"document_id": q1["id"], "meta": p1["meta"], "rows": p1["rows"], "included": [True], "main": 0},
+            {"document_id": q2["id"], "meta": p2["meta"], "rows": p2["rows"], "included": [True, True], "main": 1},
+        ],
+        "author": {"name": "영업 담당", "department": "솔루션사업본부", "phone": "010-0000-0000", "email": "s@unipoint.co.kr"},
+        "settings": {"exchange_rate": 1360, "multiplier": 2.3, "target_total": 20000000},
     }
-    preview = client.post("/api/quote-builder/preview", json=body, headers=sales).json()
-    assert "HSM 견적" in preview["html"] and "29,000,000" in preview["html"] and "영업 담당" in preview["html"]
-    assert "{{" not in preview["html"] and preview["formats"] == ["docx", "pdf"]
-    assert client.post("/api/quote-builder", json={**body, "price": {"columns": [], "rows": []}}, headers=sales).status_code == 400
+    preview = client.post("/api/quote-builder/preview", json=body, headers=sales)
+    assert preview.status_code == 200, preview.text
+    preview = preview.json()
+    assert preview["formats"] == ["xlsx", "pdf"]
+    lines, totals = preview["lines"], preview["totals"]
+    assert [(l["quantity"], l["cost_usd"]) for l in lines] == [(2, 14675.68), (6, 20671.26)]  # 2번 행은 두 라인의 합
+    assert lines[1]["description"].startswith("LUNA NETWORK HSM S750") and "AB200001 / AB200002" in lines[1]["description"]
+    assert lines[0]["product_name"] == "Luna Network HSM" and lines[0]["note"] == "Enhanced MA\n(ABCD1-100001)"
+    assert round(totals["supply"]) == 20000000 and round(totals["vat_included"]) == 22000000
+    assert abs(lines[0]["amount"] - 14675.68 * 1360 * 2.3) < 0.01
+    assert "파트너사 귀중" in preview["html"] and "이천이백만" in preview["html"]
+    assert client.post("/api/quote-builder", json={**body, "recipient": ""}, headers=sales).status_code == 400
     assert client.post("/api/quote-builder", json=body, headers=engineer).status_code == 403
 
-    # 생성 → 형식별 받기
     q = client.post("/api/quote-builder", json=body, headers=sales)
     assert q.status_code == 201, q.text
     q = q.json()
-    assert q["doc_type"] == "quote" and q["version"] == 1 and q["formats"] == ["docx", "pdf"]
-    docx = client.get(f"/api/generated/{q['id']}/download?format=docx", headers=sales)
-    assert docx.status_code == 200 and docx.content.startswith(b"PK")
-    text = "\n".join(p.text for p in Document(io.BytesIO(docx.content)).paragraphs)
-    assert "견적서: HSM 견적" in text and "영업 담당" in text
+    assert q["formats"] == ["xlsx", "pdf"] and q["version"] == 1
+    xlsx = client.get(f"/api/generated/{q['id']}/download?format=xlsx", headers=sales)
+    assert xlsx.status_code == 200
+    ws = load_workbook(io.BytesIO(xlsx.content)).worksheets[0]
+    assert ws["B7"].value == "파트너사 귀중" and ws["B8"].value.startswith("프로젝트명 : [예시은행]")
+    assert ws["N18"].value == 14675.68 and ws["O18"].value == 1360 and ws["G18"].value == "=N18*O18*2.3"
+    assert ws["H19"].value == "=G19*(1-I19)" and ws["S19"].value == "=R19/H19" and ws["P9"].value == 20000000
+    assert ws["D20"].value == "- 이하여백 -" and ws["H21"].value == "=SUM(H18:H20)" and ws["H22"].value == "=H21*1.1"
+    assert "NUMBERSTRING(H22,1)" in ws["B16"].value and ws.print_area.endswith("$J$30")
     assert client.get(f"/api/generated/{q['id']}/download?format=pdf", headers=sales).content.startswith(b"%PDF")
-    assert client.get(f"/api/generated/{q['id']}/download?format=xlsx", headers=sales).status_code == 400
+    assert client.get(f"/api/generated/{q['id']}/download?format=docx", headers=sales).status_code == 400
 
     # 9. 고쳐서 다시 생성 → 다음 버전
-    v2 = client.post("/api/quote-builder", json={**body, "title": "HSM 견적 (수정)", "based_on_id": q["id"]}, headers=sales).json()
+    v2 = client.post("/api/quote-builder", json={**body, "settings": {"exchange_rate": 1400}, "based_on_id": q["id"]}, headers=sales).json()
     assert v2["version"] == 2 and v2["root_id"] == q["id"]
-    assert [g["version"] for g in client.get("/api/generated?doc_type=quote", headers=sales).json()] == [2, 1]
-
-    # 양식 없이 만들면 기본 양식으로 PDF·Word·Excel
-    v3 = client.post("/api/quote-builder", json={**body, "template_id": None}, headers=sales).json()
-    assert v3["formats"] == ["pdf", "docx", "xlsx"]
-    assert client.get(f"/api/generated/{v3['id']}/download?format=xlsx", headers=sales).content.startswith(b"PK")
+    # 직접 올린 Word 양식으로 만들면 Word·PDF
+    v3 = client.post("/api/quote-builder", json={**body, "template_id": tpl["id"]}, headers=sales).json()
+    assert v3["formats"] == ["docx", "pdf"]
+    text = "\n".join(p.text for p in Document(io.BytesIO(client.get(f"/api/generated/{v3['id']}/download?format=docx", headers=sales).content)).paragraphs)
+    assert "견적서: [예시은행]" in text and "영업 담당" in text

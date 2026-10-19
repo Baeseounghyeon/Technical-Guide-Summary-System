@@ -1,14 +1,15 @@
-"""견적서 생성 (단계별).
+"""견적서 생성 (단계별) — 견적서_매핑정리.md 기준.
 
-1 견적서 양식 선택 → 2 제품 가격표 선택 → 3 가격표 항목 체크·수정 → 4 매입 금액 선택 → 5 매입 항목 체크·수정
-→ 6 작성자 정보(로그인한 사용자로 자동 채움) → 7 최종 확인·미리보기 → 생성(원하는 형식으로 받기).
-견적서 양식은 '가져오기 > 견적서 양식'에서 조직별로 등록·변경한다 (문서 등록과 별개).
+1 견적서 양식 선택 → 2 제품 가격표 선택(참고용) → 3 가격표 항목 체크 → 4 매입 견적 PDF 선택(여러 건) → 5 매입 라인 확인·수정
+→ 6 작성자 정보(로그인한 사용자) → 7 최종 확인(수신처·프로젝트명·환율·목표 금액)·미리보기 → 생성(엑셀·PDF).
+견적서 한 행 = 매입 견적 PDF 한 건. 기본 양식은 유니포인트 견적서 엑셀(services/unipoint_quote.py).
+견적서 양식(Word·Excel)은 '가져오기 > 견적서 양식'에서 따로 등록·변경할 수 있다 (자리 표시를 채운다).
 """
 
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
@@ -16,7 +17,9 @@ from ..db import get_db
 from ..deps import get_active_user, get_readable_document, is_admin, require_permission
 from ..models import GeneratedDocument, QuoteTemplate, User, utcnow
 from ..schemas import UTCDateTime
-from ..services.exporters.quote_export import ItemTable, QuoteData, formats_for, preview_html
+from ..services.exporters import quote_export
+from ..services import unipoint_quote as uq
+from ..services.thales_pdf import PRICE_COLUMNS, parse_price_list, parse_purchase_quote
 from ..services.storage import get_storage
 from ..services.table_extract import extract_items
 from .generated import _get_generated, _out
@@ -141,11 +144,19 @@ def download_template(template_id: int, user: User = Depends(get_active_user), d
 
 @router.get("/documents/{document_id}/items")
 def document_items(document_id: int, user: User = Depends(get_active_user), db: Session = Depends(get_db)) -> dict:
-    """제품 가격표·매입 금액 문서의 표를 {columns, rows} 로 돌려준다."""
+    """제품 가격표(제품 번호·제품명·설명·리스트 가격)와 매입 견적(머리 정보 + 라인)을 뽑는다. Thales 형식이 아니면 첫 표 그대로."""
     doc = get_readable_document(db, user, document_id)
     if not doc.file_path:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "파일로 등록한 문서만 항목을 뽑을 수 있습니다.")
     with get_storage().local_path(doc.file_path) as path:
+        if doc.source_type == "pdf" and doc.doc_type == "price_list":
+            rows = parse_price_list(path)
+            if rows:
+                return {"columns": PRICE_COLUMNS, "rows": rows}
+        if doc.source_type == "pdf" and doc.doc_type == "purchase":
+            parsed = parse_purchase_quote(path)
+            if parsed["rows"]:
+                return parsed
         return extract_items(path, doc.source_type)
 
 
@@ -157,80 +168,143 @@ class Items(BaseModel):
     rows: list[list[str]] = []
 
 
+class PurchaseIn(BaseModel):
+    """매입 견적 PDF 한 건 = 견적서 한 행."""
+
+    document_id: int
+    meta: dict = {}  # quote_number, end_user, partner, quote_total
+    rows: list[list[str]] = []  # thales_pdf.PURCHASE_COLUMNS 순서 (화면에서 고친 값)
+    included: list[bool] = []  # 금액(N)에 넣을 라인
+    main: int = 0  # 대표 라인 (품명·설명·시리얼·수량·계약 번호)
+
+
+class Settings(BaseModel):
+    exchange_rate: float = Field(1360, gt=0)  # O열
+    multiplier: float = Field(2.3, gt=0)  # G = N × O × 배수
+    discount_pct: float = Field(0, ge=0, le=100)
+    target_total: float | None = Field(None, gt=0)  # P9 목표 공급가 합계 → 할인율 역산
+
+
 class QuoteIn(BaseModel):
-    title: str = ""
+    title: str = ""  # B8 프로젝트명
+    recipient: str = ""  # B7 ○○ 귀중
+    date: str = ""  # H8 견적일자 YYYY-MM-DD (비우면 오늘)
     template_id: int | None = None
-    price_list_id: int | None = None
+    price_list_id: int | None = None  # 참고용
     price: Items = Items()
-    purchase_id: int | None = None
-    purchase: Items = Items()
+    purchases: list[PurchaseIn] = []
     author: dict[str, str] = {}
+    settings: Settings = Settings()
     based_on_id: int | None = None  # 이전에 만든 견적서를 고쳐 만들면 다음 버전
 
 
-def quote_data(q: dict, *, version: str = "", date: str | None = None, meta: list | None = None) -> QuoteData:
-    """저장된 견적서 내용(fields) → 출력용 데이터."""
-    tables = []
-    for key, label in ITEM_SOURCES.items():
-        items = (q.get("items") or {}).get(key) or {}
-        if items.get("rows"):
-            tables.append(ItemTable(label, list(items.get("columns") or []), [list(r) for r in items["rows"]]))
-    return QuoteData(
-        title=q.get("title") or "(제목 없음)",
-        author=dict(q.get("author") or {}),
-        tables=tables,
-        date=date or f"{utcnow():%Y-%m-%d}",
-        version=version,
-        meta=meta or [],
+def _lines(payload: dict) -> tuple[list[dict], dict]:
+    purchases = [
+        uq.Purchase(rows=p.get("rows") or [], included=list(p.get("included") or []), main=int(p.get("main") or 0), meta=p.get("meta") or {})
+        for p in payload.get("purchases") or []
+    ]
+    return uq.build_lines(purchases, uq.QuoteSettings(**(payload.get("settings") or {})))
+
+
+def quote_doc(payload: dict, date: str | None = None) -> uq.QuoteDoc:
+    lines, totals = _lines(payload)
+    return uq.QuoteDoc(
+        project=payload.get("title") or "",
+        recipient=payload.get("recipient") or "",
+        date=date or payload.get("date") or f"{utcnow():%Y-%m-%d}",
+        author=dict(payload.get("author") or {}),
+        lines=lines,
+        totals=totals,
+        settings=uq.QuoteSettings(**(payload.get("settings") or {})),
     )
+
+
+def _legacy(q: uq.QuoteDoc, version: str) -> quote_export.QuoteData:
+    """직접 올린 양식(Word·Excel 자리 표시)용 데이터. 품목 표는 {{품목표}} 자리에 들어간다."""
+    cols = ["순번", "Product Number", "Product Name", "Product Description", "수량", "단위", "금액", "공급가", "할인율", "비고"]
+    rows = [
+        [str(l["no"]), l["product_number"], l["product_name"], l["description"], str(l["quantity"]), l["unit"],
+         f"{l['amount']:,.0f}", f"{l['supply']:,.0f}", f"{l['discount'] * 100:.1f}%", l["note"]]
+        for l in q.lines
+    ]
+    author = {**q.author, "company": q.author.get("company", "")}
+    return quote_export.QuoteData(
+        title=q.project, author=author, tables=[quote_export.ItemTable("견적 품목", cols, rows)], date=q.date, version=version
+    )
+
+
+def formats_for(template: QuoteTemplate | None) -> list[str]:
+    return [template.file_ext, "pdf"] if template else ["xlsx", "pdf"]
+
+
+def render(payload: dict, template: QuoteTemplate | None, fmt: str, *, version: str = "", date: str | None = None) -> bytes:
+    """기본: 유니포인트 견적서 엑셀(+PDF). 직접 올린 양식이면 그 형식으로 양식을 채운다(PDF 는 기본 배치)."""
+    q = quote_doc(payload, date)
+    if fmt == "pdf":
+        return uq.build_pdf(q)
+    if template is None:
+        return uq.build_xlsx(q)[0]
+    with get_storage().local_path(template.file_path) as path:
+        return quote_export.build_quote(_legacy(q, version), fmt, path, template.file_ext)
+
+
+def render_preview(payload: dict, template: QuoteTemplate | None) -> str:
+    q = quote_doc(payload)
+    if template is None:
+        data, calc = uq.build_xlsx(q)
+        return uq.preview_html(data, calc)
+    with get_storage().local_path(template.file_path) as path:
+        return quote_export.preview_html(_legacy(q, ""), path, template.file_ext)
 
 
 def _payload(db: Session, user: User, body: QuoteIn) -> tuple[dict, QuoteTemplate | None]:
     template = get_template(db, user, body.template_id) if body.template_id else None
-    for doc_id, kind in ((body.price_list_id, "price_list"), (body.purchase_id, "purchase")):
-        if doc_id:
-            doc = get_readable_document(db, user, doc_id)
-            if doc.doc_type != kind:
-                raise HTTPException(status.HTTP_400_BAD_REQUEST, f"{ITEM_SOURCES[kind]}(으)로 등록한 문서를 고르세요.")
+    if body.price_list_id:
+        doc = get_readable_document(db, user, body.price_list_id)
+        if doc.doc_type != "price_list":
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "제품 가격표로 등록한 문서를 고르세요.")
+    for p in body.purchases:
+        doc = get_readable_document(db, user, p.document_id)
+        if doc.doc_type != "purchase":
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "매입 금액으로 등록한 문서를 고르세요.")
     payload = {
         "title": body.title.strip(),
+        "recipient": body.recipient.strip(),
+        "date": body.date or f"{utcnow():%Y-%m-%d}",
         "template_id": template.id if template else None,
         "template_name": template.name if template else None,
         "template_ext": template.file_ext if template else None,
-        "items": {"price_list": body.price.model_dump(), "purchase": body.purchase.model_dump()},
+        "price_list_id": body.price_list_id,
+        "price": body.price.model_dump(),
+        "purchases": [p.model_dump() for p in body.purchases],
         "author": {k: (v or "").strip() for k, v in body.author.items()},
+        "settings": body.settings.model_dump(),
     }
+    lines, totals = _lines(payload)
+    payload["lines"], payload["totals"] = lines, totals
     return payload, template
-
-
-def render_preview(db: Session, payload: dict, template: QuoteTemplate | None) -> str:
-    data = quote_data(payload, meta=[("상태", "미리보기")])
-    if template is None:
-        return preview_html(data, None, None)
-    with get_storage().local_path(template.file_path) as path:
-        return preview_html(data, path, template.file_ext)
 
 
 @router.post("/quote-builder/preview")
 def preview_quote(body: QuoteIn, user: User = Depends(get_active_user), db: Session = Depends(get_db)) -> dict:
-    """7단계 미리보기: 실제로 만들어질 견적서(양식이 있으면 양식을 채운 결과)를 HTML 로."""
+    """7단계 미리보기: 만들어질 견적서(고객용 인쇄 영역)를 HTML 로. 계산한 품목·합계(매입·GP 포함)도 돌려준다."""
     require_permission(db, user, "quote")
     payload, template = _payload(db, user, body)
-    return {"html": render_preview(db, payload, template), "formats": formats_for(template.file_ext if template else None)}
+    return {"html": render_preview(payload, template), "formats": formats_for(template), "lines": payload["lines"], "totals": payload["totals"]}
 
 
 @router.post("/quote-builder", status_code=status.HTTP_201_CREATED)
 def create_quote(body: QuoteIn, user: User = Depends(get_active_user), db: Session = Depends(get_db)) -> dict:
-    """최종 생성: 내용을 저장한다(생성한 견적서 이력). 파일은 받을 때 원하는 형식으로 만든다."""
+    """최종 생성: 내용을 저장한다(생성한 견적서 이력). 파일은 받을 때 고른 형식으로 만든다."""
     require_permission(db, user, "quote")
     payload, _template = _payload(db, user, body)
     missing = []
     if not payload["title"]:
-        missing.append("견적서 제목")
-    if not body.price_list_id or not body.price.rows:
-        missing.append("제품 가격표 항목")
-    if not body.purchase_id or not body.purchase.rows:
-        missing.append("매입 금액 항목")
+        missing.append("프로젝트명")
+    if not payload["recipient"]:
+        missing.append("수신처")
+    if not payload["lines"] or not any(any(p.included) for p in body.purchases):
+        missing.append("매입 견적 라인")
     if not payload["author"].get("name"):
         missing.append("작성자")
     if missing:
@@ -239,7 +313,7 @@ def create_quote(body: QuoteIn, user: User = Depends(get_active_user), db: Sessi
         doc_type="quote",
         title=payload["title"],
         fields=payload,
-        attachments={"price_list": body.price_list_id, "purchase": body.purchase_id},
+        attachments={"price_list": body.price_list_id, "purchase": [p.document_id for p in body.purchases]},
         partner_id=user.partner_id,
         created_by=user.id,
     )

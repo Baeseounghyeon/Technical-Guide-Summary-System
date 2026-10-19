@@ -25,3 +25,5 @@ Thumbs.db
 .vercel
 .env*
 !.env.example
+# 견적서 기본 양식(직인 그림 포함) — 공개 저장소에 넣지 않고 앱 저장소(Supabase)에 둔다
+backend/app/assets/
