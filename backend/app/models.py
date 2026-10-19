@@ -183,6 +183,7 @@ class DocType(StrEnum):
     GUIDE = "guide"  # 벤더 기술 가이드
     BROCHURE = "brochure"  # 벤더 브로슈어
     QUOTE = "quote"  # 견적서
+    SPEC_EXTRA = "spec_extra"  # 규격서 기타 문서 (제품 가격표·매입 금액). 규격서 생성 때 첨부로 가져온다
 
 
 class GuideKind(StrEnum):
@@ -203,6 +204,7 @@ class SourceDocument(Base):
     doc_type: Mapped[str | None] = mapped_column(String(20), default=DocType.GUIDE)  # spec | guide | brochure
     description: Mapped[str | None] = mapped_column(Text)
     guide_kind: Mapped[str | None] = mapped_column(String(20))  # doc_type=guide 일 때: technical | troubleshooting
+    extra_kind: Mapped[str | None] = mapped_column(String(20))  # doc_type=spec_extra 일 때: price_list(제품 가격표) | purchase(매입 금액)
     product: Mapped[str | None] = mapped_column(String(100))  # 제품군 (catalog.PRODUCT_CATALOG)
     product_detail: Mapped[str | None] = mapped_column(String(100))  # 제품군의 상세
     # 휴지통: 삭제하면 표시만 하고(같은 조직이 복구 가능), 목록에서 뺀다
@@ -731,6 +733,8 @@ class GeneratedDocument(Base):
     doc_type: Mapped[str] = mapped_column(String(20), index=True)  # spec | quote
     title: Mapped[str] = mapped_column(String(300))
     fields: Mapped[dict] = mapped_column(JSON, default=dict)
+    # 규격서 생성 때 가져온 기타 문서: {"price_list": 문서 id, "purchase": 문서 id}
+    attachments: Mapped[dict | None] = mapped_column(JSON)
     source_document_id: Mapped[int | None] = mapped_column(ForeignKey("source_documents.id", ondelete="SET NULL"))
     root_id: Mapped[int | None] = mapped_column(ForeignKey("generated_documents.id", ondelete="SET NULL"), index=True)
     based_on_id: Mapped[int | None] = mapped_column(ForeignKey("generated_documents.id", ondelete="SET NULL"))

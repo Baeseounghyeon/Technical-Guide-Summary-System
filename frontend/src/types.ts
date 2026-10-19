@@ -63,8 +63,9 @@ export interface DocumentSummary {
   vendor_id: number;
   vendor_name: string;
   title: string | null;
-  doc_type: "spec" | "guide" | "quote" | "brochure";
+  doc_type: "spec" | "guide" | "quote" | "brochure" | "spec_extra";
   guide_kind: "technical" | "troubleshooting" | null;
+  extra_kind?: "price_list" | "purchase" | null;
   product: string | null;
   product_detail: string | null;
   description: string | null;
@@ -74,7 +75,7 @@ export interface DocumentSummary {
   uploaded_by_name: string | null;
   access: "own" | "shared" | "domain";
   shared_with: string[];
-  source_type: "pdf" | "docx" | "pptx" | "url";
+  source_type: "pdf" | "docx" | "pptx" | "xlsx" | "url";
   url: string | null;
   page_count: number | null;
   status: "uploaded" | "parsing" | "parsed" | "failed";

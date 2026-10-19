@@ -6,7 +6,7 @@
 
 import html
 import io
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import pymupdf
 from docx import Document
@@ -28,6 +28,7 @@ class FormDoc:
     fields: list[dict]  # FORM_FIELDS 항목
     values: dict[str, str]
     meta: list[tuple[str, str]]  # (작성자, …)
+    attachments: list[tuple[str, str]] = field(default_factory=list)  # (제품 가격표, 문서 이름) — 가져온 기타 문서
 
 
 def _rows(form: FormDoc) -> list[list[dict]]:
@@ -75,7 +76,15 @@ def build_pdf(form: FormDoc) -> bytes:
         f'<p style="background-color:#{NAVY};color:#FFFFFF;text-align:center;font-size:12pt;font-weight:bold;padding:6px;margin:0 0 8px 0">'
         f"{html.escape(form.kind)} 정보</p>"
         f'<table style="width:100%">{rows}</table>'
-        "</div>"
+        + (
+            '<p style="font-size:8pt;font-weight:bold;margin:10px 8px 2px 8px">첨부 자료:</p>'
+            + "".join(
+                f'<p style="font-size:9.5pt;margin:0 8px 2px 8px">· {html.escape(k)}: {html.escape(v)}</p>' for k, v in form.attachments
+            )
+            if form.attachments
+            else ""
+        )
+        + "</div>"
         f'<p style="font-size:8pt;color:#666;margin-top:10px">{meta}</p>'
     )
     story = pymupdf.Story(html=body, user_css="body{font-size:10pt;}")
@@ -141,6 +150,14 @@ def build_docx(form: FormDoc) -> bytes:
             label.font.size = Pt(8)
             for line in (form.values.get(f["key"], "") or "").splitlines() or [""]:
                 target.add_paragraph().add_run(line).font.size = Pt(10)
+    if form.attachments:
+        cells = table.add_row().cells
+        box = cells[0].merge(cells[1])
+        head_run = box.paragraphs[0].add_run("첨부 자료:")
+        head_run.bold = True
+        head_run.font.size = Pt(8)
+        for k, v in form.attachments:
+            box.add_paragraph().add_run(f"· {k}: {v}").font.size = Pt(10)
     meta = doc.add_paragraph()
     m = meta.add_run(" · ".join(f"{k}: {v}" for k, v in form.meta))
     m.font.size = Pt(8)

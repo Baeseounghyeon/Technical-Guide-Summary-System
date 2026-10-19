@@ -2,11 +2,11 @@ import re
 from pathlib import Path
 
 from .base import ParsedDocument, ParsedSection, ParseError
-from .office import parse_docx, parse_pptx
+from .office import parse_docx, parse_pptx, parse_xlsx
 from .pdf import parse_pdf
 from .web import parse_url
 
-SUPPORTED_EXTENSIONS = {".pdf": "pdf", ".docx": "docx", ".pptx": "pptx"}
+SUPPORTED_EXTENSIONS = {".pdf": "pdf", ".docx": "docx", ".pptx": "pptx", ".xlsx": "xlsx"}
 
 # 목차 확인 단계에서 기본으로 요약 대상에서 빼 둘 항목
 _BOILERPLATE = re.compile(
@@ -21,7 +21,7 @@ def parse_source(source_type: str, *, path: Path | None = None, url: str | None 
         assert url
         return parse_url(url)
     assert path
-    parser = {"pdf": parse_pdf, "docx": parse_docx, "pptx": parse_pptx}.get(source_type)
+    parser = {"pdf": parse_pdf, "docx": parse_docx, "pptx": parse_pptx, "xlsx": parse_xlsx}.get(source_type)
     if parser is None:
         raise ParseError(f"지원하지 않는 형식입니다: {source_type}")
     return parser(path)

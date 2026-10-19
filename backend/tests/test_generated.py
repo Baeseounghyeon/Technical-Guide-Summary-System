@@ -76,3 +76,63 @@ def test_spec_generation_reuse_and_versions(client, tmp_path: Path):
 def test_my_guides_lists_created_guides(client):
     admin = login(client, *ADMIN)
     assert isinstance(client.get("/api/my-guides", headers=admin).json(), list)
+
+
+def _xlsx(path: Path, rows: list[tuple]) -> None:
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "규격"
+    for r in rows:
+        ws.append(list(r))
+    wb.save(str(path))
+
+
+def test_excel_spec_and_extra_documents(client, tmp_path: Path):
+    """규격서는 Excel 로도 등록되고, 기타 문서(제품 가격표·매입 금액)는 PDF·Word·Excel 만 받아 규격서 생성 때 첨부한다."""
+    admin = login(client, *ADMIN)
+    partner, vendor = _partner_with_vendor(client, admin, "기타문서파트너", "ExtraVendor")
+    sales = _signup_and_approve(client, admin, "extra-sales@x.example.com", partner["id"])
+    sales_id = client.get("/api/auth/me", headers=sales).json()["id"]
+    client.post(f"/api/admin/users/{sales_id}/approve", json={"partner_id": partner["id"], "track": "sales"}, headers=admin)
+    engineer = _signup_and_approve(client, admin, "extra-eng@x.example.com", partner["id"])
+
+    def upload(headers, name: str, data: dict):
+        with (tmp_path / name).open("rb") as f:
+            return client.post("/api/documents", data={"vendor_id": vendor["id"], **data}, files={"file": (name, f)}, headers=headers)
+
+    # Excel 규격서: '항목 | 값' 행이 필수 입력값으로 채워진다
+    _xlsx(tmp_path / "spec.xlsx", [("항목 A", "Luna HSM"), ("항목 B", "A790"), ("항목 C", "2대"), ("항목 D", "본사"), ("항목 E", "FIPS 140-3")])
+    r = upload(sales, "spec.xlsx", {"doc_type": "spec", "title": "엑셀 규격서"})
+    assert r.status_code == 201, r.text
+    spec = r.json()
+    assert spec["source_type"] == "xlsx"
+    # Excel 은 규격서·기타 문서만
+    assert upload(sales, "spec.xlsx", {"doc_type": "brochure"}).status_code == 400
+
+    # 기타 문서: 종류 필수, 엔지니어 불가, PowerPoint 불가
+    _xlsx(tmp_path / "price.xlsx", [("제품", "단가"), ("Luna HSM", "30,000,000")])
+    assert upload(sales, "price.xlsx", {"doc_type": "spec_extra"}).status_code == 400
+    assert upload(engineer, "price.xlsx", {"doc_type": "spec_extra", "extra_kind": "price_list"}).status_code == 403
+    price = upload(sales, "price.xlsx", {"doc_type": "spec_extra", "extra_kind": "price_list", "title": "가격표"}).json()
+    purchase = upload(sales, "price.xlsx", {"doc_type": "spec_extra", "extra_kind": "purchase", "title": "매입가"}).json()
+    run_pending_jobs()
+
+    filled = client.get(f"/api/forms/spec/prefill?document_id={spec['id']}", headers=sales).json()
+    assert filled["fields"] == {"a": "Luna HSM", "b": "A790", "c": "2대", "d": "본사", "e": "FIPS 140-3"}
+
+    lists = {k: [d["title"] for d in client.get(f"/api/documents?doc_type=spec_extra&extra_kind={k}", headers=sales).json()] for k in ("price_list", "purchase")}
+    assert lists == {"price_list": ["가격표"], "purchase": ["매입가"]}
+    # 기타 문서는 규격서 목록에 섞이지 않는다
+    assert [d["title"] for d in client.get("/api/documents?doc_type=spec", headers=sales).json()] == ["엑셀 규격서"]
+
+    body = {"doc_type": "spec", "title": "첨부 규격서", "fields": filled["fields"], "source_document_id": spec["id"]}
+    # 종류가 맞지 않으면 거절
+    assert client.post("/api/generated", json={**body, "attachments": {"price_list": purchase["id"]}}, headers=sales).status_code == 400
+    g = client.post("/api/generated", json={**body, "attachments": {"price_list": price["id"], "purchase": purchase["id"]}}, headers=sales).json()
+    assert [(a["label"], a["title"]) for a in g["attachments"]] == [("제품 가격표", "가격표"), ("매입 금액", "매입가")]
+    r = client.post("/api/forms/preview", json={**body, "attachments": {"price_list": price["id"]}}, headers=sales)
+    assert r.status_code == 200 and r.content.startswith(b"%PDF")
+    for fmt in ("pdf", "docx"):
+        assert client.get(f"/api/generated/{g['id']}/download?format={fmt}", headers=sales).status_code == 200

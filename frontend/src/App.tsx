@@ -20,7 +20,7 @@ import QuotesPage from "./pages/QuotesPage";
 import { DomainRequestPage, MyRequestsPage } from "./pages/RequestsPages";
 import { PermissionRequestPage } from "./pages/PermissionPages";
 import GuideSharePage from "./pages/GuideSharePage";
-import { CreatedGuidesPage, FormCreatePage, GeneratedListPage, GuideCreatePage } from "./pages/GeneratePages";
+import { CreatedGuidesPage, ExtraDocsPage, FormCreatePage, GeneratedListPage, GuideCreatePage } from "./pages/GeneratePages";
 import HomeDetailPage from "./pages/HomeDetailPage";
 import TrashPage from "./pages/TrashPage";
 import NotificationBell from "./NotificationBell";
@@ -47,6 +47,7 @@ export default function App() {
       <Route path="/specs/org" element={<Protected><OrgTypePage key="spec-org" docType="spec" /></Protected>} />
       <Route path="/specs/create" element={<Protected perm="spec"><FormCreatePage key="spec-create" docType="spec" /></Protected>} />
       <Route path="/specs/created" element={<Protected perm="spec"><GeneratedListPage key="spec-created" docType="spec" /></Protected>} />
+      <Route path="/specs/extra" element={<Protected perm="spec"><ExtraDocsPage /></Protected>} />
       <Route path="/brochures" element={<Protected><RegisteredTypePage key="brochure" docType="brochure" /></Protected>} />
       <Route path="/brochures/org" element={<Protected><OrgTypePage key="brochure-org" docType="brochure" /></Protected>} />
       <Route path="/documents/:id" element={<Protected><DocumentPage /></Protected>} />
@@ -98,9 +99,9 @@ function Protected({ children, roles, sales, perm }: { children: ReactNode; role
           <NavLink to="/" end>홈</NavLink>
           <DocsMenu />
           {/* 등록 권한이 있으면 '등록한 ○○', 없으면 같은 조직이 올린 것을 내려받기만 하는 '등록된 ○○' */}
-          <TypeMenu base="/specs" label="규격서" canEdit={can("spec")} create />
+          <TypeMenu base="/specs" label="규격서" canEdit={can("spec")} create extra />
           <GuidesMenu canEdit={can("guide")} />
-          <TypeMenu base="/quotes" label="견적서" canEdit={can("quote")} create work={can("quote")} />
+          <TypeMenu base="/quotes" label="견적서" canEdit={can("quote")} create />
           <TypeMenu base="/brochures" label="브로슈어" canEdit={can("brochure")} />
           <NavLink to="/community">커뮤니티</NavLink>
           <RequestsMenu isAdmin={isAdmin} />
@@ -132,8 +133,8 @@ function DocsMenu() {
 }
 
 /** 상단 '규격서'·'견적서'·'브로슈어' 메뉴: 누르면 등록한(권한 없으면 등록된) ○○, 마우스를 올리면 그것과 조직 요청 ○○.
- *  견적서는 권한이 있으면 '견적서 작업'(양식·로고·자료·생성)도 보인다. */
-function TypeMenu({ base, label, canEdit, create = false, work = false }: { base: string; label: string; canEdit: boolean; create?: boolean; work?: boolean }) {
+ *  규격서는 권한이 있으면 '기타 문서 등록'(제품 가격표·매입 금액)도 보인다. */
+function TypeMenu({ base, label, canEdit, create = false, extra = false }: { base: string; label: string; canEdit: boolean; create?: boolean; extra?: boolean }) {
   const { pathname } = useLocation();
   // 생성·생성한 ○○ 은 그 종류의 권한이 있을 때만 (엔지니어·영업 롤 구분: 규격서·견적서는 영업)
   const making = create && canEdit;
@@ -142,7 +143,8 @@ function TypeMenu({ base, label, canEdit, create = false, work = false }: { base
     { key: "registered", label: `${canEdit ? "등록한" : "등록된"} ${label}`, to: base, active: pathname === base },
     { key: "org", label: `조직 요청 ${label}`, to: `${base}/org`, active: pathname === `${base}/org` },
     ...(making ? [{ key: "created", label: `생성한 ${label}`, to: `${base}/created`, active: pathname === `${base}/created` }] : []),
-    ...(work ? [{ key: "work", label: `${label} 작업`, to: `${base}/work`, active: pathname === `${base}/work` }] : []),
+    // 규격서 기타 문서(제품 가격표·매입 금액): 규격서 생성 때 첨부로 가져온다
+    ...(extra && canEdit ? [{ key: "extra", label: "기타 문서 등록", to: `${base}/extra`, active: pathname === `${base}/extra` }] : []),
   ];
   return <HoverMenu to={base} label={label} items={items} />;
 }

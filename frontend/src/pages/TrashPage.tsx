@@ -1,12 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
-import { DOC_TYPES } from "../labels";
+import { docTypeLabel } from "../labels";
 import { productLabel } from "../ProductSelect";
 
 interface TrashItem {
   id: number;
   title: string | null;
   doc_type: string;
+  extra_kind?: string | null;
   vendor_name: string;
   product: string | null;
   product_detail: string | null;
@@ -62,7 +63,7 @@ export default function TrashPage() {
                 {items.data.map((d) => (
                   <tr key={d.id}>
                     <td>{d.title ?? `문서 ${d.id}`}</td>
-                    <td>{DOC_TYPES.find((t) => t.key === d.doc_type)?.label ?? "-"}</td>
+                    <td>{docTypeLabel(d.doc_type, d.extra_kind)}</td>
                     <td>{d.vendor_name}</td>
                     <td>{productLabel(d.product, d.product_detail)}</td>
                     <td>{d.uploaded_by_name ?? "-"}</td>

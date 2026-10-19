@@ -95,6 +95,19 @@ export const DOC_TYPES = [
 ] as const;
 export type DocTypeKey = (typeof DOC_TYPES)[number]["key"];
 
+/** 규격서 기타 문서(제품 가격표·매입 금액). 규격서 생성 때 첨부로 가져온다. */
+export const EXTRA_KINDS = [
+  { key: "price_list", label: "제품 가격표" },
+  { key: "purchase", label: "매입 금액" },
+] as const;
+export type ExtraKindKey = (typeof EXTRA_KINDS)[number]["key"];
+
+/** 문서 목적 표시 이름 (기타 문서 포함). */
+export function docTypeLabel(docType: string, extraKind?: string | null): string {
+  if (docType === "spec_extra") return `규격서 기타 문서(${EXTRA_KINDS.find((k) => k.key === extraKind)?.label ?? "-"})`;
+  return DOC_TYPES.find((t) => t.key === docType)?.label ?? "-";
+}
+
 /** 기술 가이드 문서의 세부 종류 (가이드 화면의 종류 선택) */
 export const GUIDE_KINDS = [
   { key: "technical", label: "기술 가이드" },

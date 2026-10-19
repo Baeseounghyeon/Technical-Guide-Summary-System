@@ -4,6 +4,7 @@ from pathlib import Path
 from docx import Document
 from docx.table import Table
 from docx.text.paragraph import Paragraph
+from openpyxl import load_workbook
 from pptx import Presentation
 
 from .base import FRONT_MATTER_TITLE, ParsedDocument, ParsedSection
@@ -78,3 +79,26 @@ def parse_pptx(path: Path) -> ParsedDocument:
             sections.append(ParsedSection(title or f"슬라이드 {index}", 1, body, index, index))
 
     return ParsedDocument(title=prs.core_properties.title or None, page_count=len(prs.slides), sections=sections)
+
+
+def parse_xlsx(path: Path) -> ParsedDocument:
+    """시트마다 한 섹션(행은 ' | ' 로 이은 줄). '항목 | 값' 처럼 두 칸만 찬 행은 그 아래 하위 섹션으로도 둔다
+    (규격서 재사용 때 항목 이름으로 값을 찾기 위해)."""
+    wb = load_workbook(str(path), read_only=True, data_only=True)
+    sections: list[ParsedSection] = []
+    for index, ws in enumerate(wb.worksheets, start=1):
+        lines: list[str] = []
+        pairs: list[ParsedSection] = []
+        for row in ws.iter_rows(values_only=True):
+            cells = [str(v).strip() for v in row if v is not None and str(v).strip()]
+            if not cells:
+                continue
+            lines.append(" | ".join(cells))
+            if len(cells) == 2:
+                pairs.append(ParsedSection(cells[0][:500], 2, cells[1], index, index))
+        sections.append(ParsedSection(ws.title or f"시트 {index}", 1, "\n".join(lines), index, index))
+        sections += pairs
+    title = wb.properties.title if wb.properties else None
+    sheet_count = len(wb.worksheets)
+    wb.close()
+    return ParsedDocument(title=title or None, page_count=sheet_count, sections=sections)
