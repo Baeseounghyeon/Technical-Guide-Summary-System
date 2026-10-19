@@ -340,9 +340,9 @@ export default function QuoteBuilderPage() {
   const stepHint: Record<number, string> = {
     1: "위 '가져오기 > 견적서 양식'에서 양식을 고르세요. 기본 양식은 유니포인트 견적서 엑셀입니다.",
     2: "위 '가져오기 > 제품 가격표'에서 가격표를 고르세요. 가격표는 품명·리스트가 참고용이라 견적 금액 계산에는 쓰지 않습니다(건너뛸 수 있음).",
-    3: "참고할 제품을 체크하세요. 검색으로 제품 번호·이름을 찾을 수 있습니다.",
+    3: "참고할 제품을 체크하세요(머리글 칸으로 모두 체크). 가격표는 참고용이라 모두 체크해도 견적서 엑셀에는 들어가지 않습니다.",
     4: "위 '가져오기 > 매입 금액'에서 이번 견적에 넣을 매입 견적(Thales 견적서 PDF)을 모두 체크하세요. 한 건이 견적서 한 행이 됩니다.",
-    5: "매입 견적마다 금액에 넣을 라인(포함)과 견적서에 보일 대표 라인을 고르세요. 값이 다르면(예: 기간이 PDF에 없을 때) 칸을 눌러 고치세요.",
+    5: "매입 견적마다 금액에 넣을 라인(포함)과 견적서에 보일 대표 라인을 고르세요. 모두 포함해도 견적서에는 대표 라인의 품번·제품·시리얼·기간·수량·계약 번호와 포함한 라인의 금액 합계만 들어갑니다(0원 라인은 합계에 영향 없음). 값이 다르면 칸을 눌러 고치세요.",
     6: "견적서 상단의 회사명·주소·연락처와 담당자 줄(부서/ 이름 / 전화 / 메일)에 들어갑니다. 이름·부서·전화·메일은 로그인한 사용자 정보로, 회사 정보는 지난번 입력값으로 채웠습니다.",
     7: "수신처·프로젝트명·환율·목표 금액을 확인하고 미리보기를 본 뒤 생성하세요. 고칠 곳이 있으면 위 단계 번호를 누르세요.",
   };
@@ -598,10 +598,13 @@ function DocPicker({ docType, checked, onPick, multiple = false }: { docType: "p
   if (docs.isLoading) return <p className="muted">불러오는 중…</p>;
   if (docs.error) return <p className="error">{docs.error.message}</p>;
   if (!docs.data?.length) return <p className="muted">등록한 {label}가 없습니다. <Link to={`/documents?type=${docType}`}>문서 등록</Link>에서 {label}(으)로 올리세요.</p>;
+  const all = docs.data.every((d) => checked.includes(d.id));
+  // 모두 체크: 아직 고르지 않은 문서만 더한다 / 모두 해제: 고른 문서를 모두 뺀다
+  const toggleAll = () => docs.data!.filter((d) => checked.includes(d.id) === all).forEach((d) => onPick({ id: d.id, title: d.title }));
   return (
     <div className="table-wrap">
       <table style={{ minWidth: 700 }}>
-        <thead><tr><th style={{ width: 48 }}>선택</th><th>문서 이름</th><th>벤더</th><th>제품</th><th>형식</th><th>등록자</th><th>등록 일자</th></tr></thead>
+        <thead><tr><th style={{ width: 48 }}>{multiple ? <input type="checkbox" checked={all} onChange={toggleAll} aria-label={`${label} 모두 선택`} title="모두 선택" /> : "선택"}</th><th>문서 이름</th><th>벤더</th><th>제품</th><th>형식</th><th>등록자</th><th>등록 일자</th></tr></thead>
         <tbody>
           {docs.data.map((d) => (
             <tr key={d.id} className={checked.includes(d.id) ? "highlight" : ""}>
@@ -636,6 +639,11 @@ function PriceEditor({ items, onChange }: { items: EditableItems | null; onChang
   const keyword = q.trim().toLowerCase();
   const shown = items.rows.map((r, i) => [r, i] as const).filter(([r]) => !keyword || r.join(" ").toLowerCase().includes(keyword));
   const toggle = (i: number) => onChange({ ...items, checked: items.checked.map((x, j) => (j === i ? !x : x)) });
+  const allShown = shown.length > 0 && shown.every(([, i]) => items.checked[i]);
+  const toggleAll = () => {
+    const ids = new Set(shown.map(([, i]) => i));
+    onChange({ ...items, checked: items.checked.map((x, i) => (ids.has(i) ? !allShown : x)) });
+  };
   return (
     <>
       <div className="form-row" style={{ alignItems: "flex-end" }}>
@@ -647,7 +655,14 @@ function PriceEditor({ items, onChange }: { items: EditableItems | null; onChang
       </div>
       <div className="table-wrap" style={{ maxHeight: 420 }}>
         <table style={{ minWidth: 760 }}>
-          <thead><tr><th style={{ width: 48 }}>선택</th>{items.columns.map((c) => <th key={c}>{c}</th>)}</tr></thead>
+          <thead>
+            <tr>
+              <th style={{ width: 48 }}>
+                <input type="checkbox" checked={allShown} onChange={toggleAll} aria-label={keyword ? "검색된 항목 모두 선택" : "모두 선택"} title={keyword ? "검색된 항목 모두 선택" : "모두 선택"} />
+              </th>
+              {items.columns.map((c) => <th key={c}>{c}</th>)}
+            </tr>
+          </thead>
           <tbody>
             {shown.map(([r, i]) => (
               <tr key={i} className={items.checked[i] ? "highlight" : ""}>
@@ -672,6 +687,9 @@ function PurchaseEditor({ purchases, onChange }: { purchases: Purchase[]; onChan
       {purchases.map((p, pi) => {
         const cols = visible.filter((c) => p.columns.includes(c));
         const total = p.rows.reduce((sum, r, i) => sum + (p.included[i] ? Number(cell(p, r, COL.total)) || 0 : 0), 0);
+        const allIncluded = p.included.length > 0 && p.included.every(Boolean);
+        const main = p.rows[p.main] ?? [];
+        const period = [cell(p, main, "시작일"), cell(p, main, "종료일")].filter(Boolean).join(" ~ ") || cell(p, main, "커버리지");
         const set = (r: number, name: string, v: string) =>
           onChange(pi, { ...p, rows: p.rows.map((row, i) => (i === r ? row.map((x, j) => (j === p.columns.indexOf(name) ? v : x)) : row)) });
         return (
@@ -689,7 +707,16 @@ function PurchaseEditor({ purchases, onChange }: { purchases: Purchase[]; onChan
             <div className="table-wrap">
               <table className="items-table" style={{ minWidth: 1100 }}>
                 <thead>
-                  <tr><th style={{ width: 48 }}>포함</th><th style={{ width: 48 }}>대표</th>{cols.map((c) => <th key={c}>{c}</th>)}</tr>
+                  <tr>
+                    <th style={{ width: 56 }}>
+                      <label className="check" style={{ gap: 4 }} title="모든 라인 금액 포함">
+                        <input type="checkbox" checked={allIncluded} onChange={() => onChange(pi, { ...p, included: p.included.map(() => !allIncluded) })} aria-label={`${pi + 1}행 모든 라인 포함`} />
+                        포함
+                      </label>
+                    </th>
+                    <th style={{ width: 48 }}>대표</th>
+                    {cols.map((c) => <th key={c}>{c}</th>)}
+                  </tr>
                 </thead>
                 <tbody>
                   {p.rows.map((r, i) => (
@@ -715,6 +742,12 @@ function PurchaseEditor({ purchases, onChange }: { purchases: Purchase[]; onChan
                 </tbody>
               </table>
             </div>
+            {/* 모두 체크해도 견적서에는 아래 값만 들어간다 (대표 라인의 품번·제품·시리얼·기간·수량·계약 번호 + 포함한 라인 금액 합계) */}
+            <p className="muted" style={{ marginTop: 6 }}>
+              견적서 {pi + 1}행에 들어갈 값 — 품번 <strong>{cell(p, main, "유지보수 제품 번호") || "-"}</strong> · 제품 <strong>{cell(p, main, "대상 제품").split("(")[0].trim() || "-"}</strong>
+              {" "}· 수량 <strong>{cell(p, main, "수량") || "-"}</strong> · 시리얼 <strong>{cell(p, main, "시리얼 번호") || "-"}</strong> · 기간 <strong>{period || "-"}</strong>
+              {" "}· 계약 번호 <strong>{cell(p, main, "계약 번호") || "-"}</strong> · 매입(N) <strong>{usd(total)}</strong>
+            </p>
           </div>
         );
       })}
