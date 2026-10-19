@@ -341,3 +341,24 @@ def test_xls_documents(client, tmp_path: Path):
     assert items == {"columns": ["제품", "단가"], "rows": [["Luna HSM", "55176"], ["CTM", "12000"]]}
     with (tmp_path / "price.xls").open("rb") as f:  # 브로슈어는 Excel 을 받지 않는다
         assert client.post("/api/documents", data={"vendor_id": vendor["id"], "doc_type": "brochure"}, files={"file": ("price.xls", f)}, headers=sales).status_code == 400
+
+
+def test_quote_line_order():
+    """품목 순서: 수량 오름차순 → 수량이 같으면 기간이 긴 것이 뒤 → 기간도 같으면 Enhanced MA(계약 번호)가 큰 것이 뒤."""
+    from app.services import unipoint_quote as uq
+
+    def purchase(qty: str, start: str, end: str, contract: str) -> uq.Purchase:
+        row = ["1", "020-160001-002-000", "HSM, ENHANCED MAINTENANCE SERVICE", "908-000364-003-000", "LUNA NETWORK HSM S750 (PED)",
+               "", contract, start, end, "12 months", qty, "1", "100"]
+        return uq.Purchase(rows=[row], included=[True], main=0)
+
+    lines, _ = uq.build_lines([
+        purchase("6", "2027.01.01", "2027.12.31", "ABCD1-100004"),
+        purchase("4", "2027.01.01", "2027.12.31", "ABCD1-100003"),
+        purchase("4", "2027.01.01", "2027.12.31", "ABCD1-100002"),
+        purchase("4", "2026.01.01", "2027.12.31", "ABCD1-100001"),  # 기간이 더 길다
+        purchase("2", "2026.10.01", "2027.09.30", "ABCD1-100005"),
+    ], uq.QuoteSettings())
+    assert [(l["no"], l["quantity"], l["contract"]) for l in lines] == [
+        (1, 2, "ABCD1-100005"), (2, 4, "ABCD1-100002"), (3, 4, "ABCD1-100003"), (4, 4, "ABCD1-100001"), (5, 6, "ABCD1-100004"),
+    ]

@@ -106,7 +106,7 @@ def _description(row: list[str]) -> str:
     head, _, rest = desc.partition("(")
     spec = ("(" + rest) if rest else ""
     spec = re.sub(r",\s+", ",", spec).replace("GRK-16", "GRK16")
-    lines = [head.strip()]
+    lines = [head.strip() + " "]  # 원래 견적서처럼 모델명 뒤에 한 칸
     if spec:
         lines.append(spec)
     serial = _v(row, "시리얼 번호")
@@ -130,6 +130,23 @@ def _service(text: str) -> str:
     return "MA" if "maintenance" in low else text
 
 
+def _period_days(row: list[str]) -> float:
+    """기간 길이(일). 시작·종료일이 없으면 커버리지 개월 수로 어림한다."""
+    try:
+        start = datetime.strptime(_v(row, "시작일"), "%Y.%m.%d")
+        end = datetime.strptime(_v(row, "종료일"), "%Y.%m.%d")
+        return (end - start).days
+    except ValueError:
+        months = re.search(r"(\d+)", _v(row, "커버리지"))
+        return int(months.group(1)) * 30.44 if months else 0
+
+
+def _line_order(line: dict) -> tuple:
+    """품목 순서: 수량 오름차순 → 수량이 같으면 기간이 긴 것이 뒤 → 기간도 같으면 Enhanced MA(계약 번호)가 큰 것이 뒤."""
+    digits = re.findall(r"\d+", line.get("contract") or "")
+    return (line["quantity"], line["period_days"], int(digits[-1]) if digits else 0)
+
+
 def build_lines(purchases: list[Purchase], s: QuoteSettings) -> tuple[list[dict], dict]:
     """매입 견적 PDF 마다 견적서 한 행. 금액·공급가·매입·GP 도 엑셀 수식과 같은 방식으로 계산한다."""
     lines = []
@@ -148,7 +165,10 @@ def build_lines(purchases: list[Purchase], s: QuoteSettings) -> tuple[list[dict]
             "note": "\n".join(x for x in (_service(_v(main, "서비스")), f"({contract})" if contract else "") if x),
             "cost_usd": round(cost, 2),  # N
             "quote_number": p.meta.get("quote_number", ""),
+            "period_days": _period_days(main),
+            "contract": contract,
         })
+    lines.sort(key=_line_order)
     rate, mult = s.exchange_rate, s.multiplier
     amount_total = sum(line["cost_usd"] * rate * mult for line in lines)
     if s.target_total and amount_total:
@@ -366,10 +386,10 @@ def build_xlsx(q: QuoteDoc, template: Path | None = None) -> tuple[bytes, dict[s
     calc: dict[str, object] = {}
     a = q.author
     # 회사명·주소·연락처·담당자 줄은 양식에서 비워 두고 웹의 작성자 정보로 채운다
-    ws["B1"] = a.get("company", "")
-    ws["J1"] = a.get("address", "")
-    ws["J2"] = a.get("contact", "")
-    ws["B2"] = author_line(a)
+    for ref, key in (("B1", "company"), ("J1", "address"), ("J2", "contact")):
+        if (a.get(key) or "").strip():
+            ws[ref] = a[key].strip()
+    ws["B2"] = author_line(a)  # '주식회사 ○○' 아래 줄: 작성자 정보
     ws[L.recipient] = f"{q.recipient} 귀중"
     ws[L.project] = f"프로젝트명 : {q.project}"
     ws[L.date] = datetime.strptime(q.date, "%Y-%m-%d")
@@ -416,6 +436,7 @@ def build_xlsx(q: QuoteDoc, template: Path | None = None) -> tuple[bytes, dict[s
     t = q.totals
     calc.update({f"{h}{L.total}": t["supply"], f"{q_}{L.total}": t["cost_krw"], f"{r_}{L.total}": t["gp"], f"{s_}{L.total}": t["gp_rate"],
                  f"{h}{L.vat}": t["vat_included"], L.proposal: f"제안금액 : 일금{korean_amount(t['vat_included'])}원정(부가세 포함)"})
+    wb.calculation.fullCalcOnLoad = True  # 엑셀로 열면 모든 수식을 다시 계산한다
     out = io.BytesIO()
     wb.save(out)
     return out.getvalue(), calc
@@ -540,10 +561,14 @@ def build_pdf(q: QuoteDoc, template: Path | None = None) -> bytes:
                  f'<td style="{td};text-align:right;font-weight:bold">{value:,.0f}</td><td colspan="2" style="{td}"></td></tr>')
     date = datetime.strptime(q.date, "%Y-%m-%d")
     terms = "".join(f'<p style="margin:1px 0;font-size:9pt">{fixed(ref)}</p>' for ref in ("B10", "B11", "B12", "B13", "B14") if ws[ref].value)
+    # 회사 정보: 웹에서 입력한 값, 없으면 양식에 적힌 값
+    company = (a.get("company") or "").strip() or str(ws["B1"].value or "")
+    address = (a.get("address") or "").strip() or str(ws["J1"].value or "")
+    contact = (a.get("contact") or "").strip() or str(ws["J2"].value or "")
     doc_html = (
-        f'<p style="font-size:10pt;font-weight:bold;margin:0">{esc(a.get("company", ""))}</p>'
+        f'<p style="font-size:10pt;font-weight:bold;margin:0">{esc(company)}</p>'
         f'<p style="font-size:8.5pt;margin:0">{esc(author_line(a))}</p>'
-        f'<p style="font-size:7.5pt;color:#444;margin:0">{esc(" · ".join(x for x in (a.get("address", ""), a.get("contact", "")) if x))}</p>'
+        f'<p style="font-size:7.5pt;color:#444;margin:0">{esc(" · ".join(x for x in (address, contact) if x))}</p>'
         '<p style="text-align:center;font-size:22pt;font-weight:bold;margin:8px 0 10px 0">견 적 서</p>'
         f'<p style="font-size:13pt;font-weight:bold;margin:0 0 4px 0">{esc(q.recipient)} 귀중</p>'
         f'<p style="font-size:10pt;margin:0">프로젝트명 : {esc(q.project)}</p>'
