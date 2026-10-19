@@ -344,7 +344,7 @@ def test_xls_documents(client, tmp_path: Path):
 
 
 def test_quote_line_order():
-    """품목 순서: 수량 오름차순 → 수량이 같으면 기간이 긴 것이 뒤 → 기간도 같으면 Enhanced MA(계약 번호)가 큰 것이 뒤."""
+    """품목 순서: 수량 오름차순 → 수량이 같으면 기간이 긴 것이 뒤 → 기간도 같으면 Enhanced MA(계약 번호)가 큰 것이 앞."""
     from app.services import unipoint_quote as uq
 
     def purchase(qty: str, start: str, end: str, contract: str) -> uq.Purchase:
@@ -360,5 +360,5 @@ def test_quote_line_order():
         purchase("2", "2026.10.01", "2027.09.30", "ABCD1-100005"),
     ], uq.QuoteSettings())
     assert [(l["no"], l["quantity"], l["contract"]) for l in lines] == [
-        (1, 2, "ABCD1-100005"), (2, 4, "ABCD1-100002"), (3, 4, "ABCD1-100003"), (4, 4, "ABCD1-100001"), (5, 6, "ABCD1-100004"),
+        (1, 2, "ABCD1-100005"), (2, 4, "ABCD1-100003"), (3, 4, "ABCD1-100002"), (4, 4, "ABCD1-100001"), (5, 6, "ABCD1-100004"),
     ]

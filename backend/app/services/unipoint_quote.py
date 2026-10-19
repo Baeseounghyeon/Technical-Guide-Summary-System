@@ -142,9 +142,9 @@ def _period_days(row: list[str]) -> float:
 
 
 def _line_order(line: dict) -> tuple:
-    """품목 순서: 수량 오름차순 → 수량이 같으면 기간이 긴 것이 뒤 → 기간도 같으면 Enhanced MA(계약 번호)가 큰 것이 뒤."""
+    """품목 순서: 수량 오름차순 → 수량이 같으면 기간이 긴 것이 뒤 → 기간도 같으면 Enhanced MA(계약 번호)가 큰 것이 앞 (원래 견적서 순서)."""
     digits = re.findall(r"\d+", line.get("contract") or "")
-    return (line["quantity"], line["period_days"], int(digits[-1]) if digits else 0)
+    return (line["quantity"], line["period_days"], -(int(digits[-1]) if digits else 0))
 
 
 def build_lines(purchases: list[Purchase], s: QuoteSettings) -> tuple[list[dict], dict]:
