@@ -74,7 +74,7 @@ export interface DocumentSummary {
   uploaded_by_name: string | null;
   access: "own" | "shared" | "domain";
   shared_with: string[];
-  source_type: "pdf" | "docx" | "pptx" | "xlsx" | "url";
+  source_type: "pdf" | "docx" | "pptx" | "xlsx" | "xls" | "url";
   url: string | null;
   page_count: number | null;
   status: "uploaded" | "parsing" | "parsed" | "failed";

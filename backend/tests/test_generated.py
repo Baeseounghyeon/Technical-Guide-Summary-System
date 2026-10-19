@@ -285,8 +285,10 @@ def test_quote_builder_steps(client, tmp_path: Path):
     assert ws["B2"].value == "솔루션사업본부/ 영업 담당 / 010-0000-0000 / s@unipoint.co.kr" and not ws._images
     assert ws["N18"].value == 14675.68 and ws["O18"].value == 1360 and ws["G18"].value == "=N18*O18*2.3"
     assert ws["H19"].value == "=G19*(1-I19)" and ws["S19"].value == "=R19/H19" and ws["P9"].value == 20000000
-    assert ws["D20"].value == "- 이하여백 -" and ws["H21"].value == "=SUM(H18:H20)" and ws["H22"].value == "=H21*1.1"
-    assert "NUMBERSTRING(H22,1)" in ws["B16"].value and ws.print_area.endswith("$J$30")
+    # 양식의 품목 표(18~21행) 안에 채운다: 2건이면 20·21행은 빈 채로, 합계 위치는 그대로
+    assert ws["B20"].value is None and ws["B21"].value is None and ws["D22"].value == "- 이하여백 -"
+    assert ws["H23"].value == "=SUM(H18:H22)" and ws["H24"].value == "=H23*1.1" and ws["P10"].value == "=1-P9/SUM(G18:G19)"
+    assert "NUMBERSTRING(H24,1)" in ws["B16"].value and ws.print_area.endswith("$J$32")
     assert client.get(f"/api/generated/{q['id']}/download?format=pdf", headers=sales).content.startswith(b"%PDF")
     assert client.get(f"/api/generated/{q['id']}/download?format=docx", headers=sales).status_code == 400
 
@@ -298,3 +300,44 @@ def test_quote_builder_steps(client, tmp_path: Path):
     assert v3["formats"] == ["docx", "pdf"]
     text = "\n".join(p.text for p in Document(io.BytesIO(client.get(f"/api/generated/{v3['id']}/download?format=docx", headers=sales).content)).paragraphs)
     assert "견적서: [예시은행]" in text and "영업 담당" in text
+
+
+def test_quote_table_grows_only_when_needed():
+    """품목이 양식 표(4행)보다 많을 때만 '- 이하여백 -' 위에 행을 늘린다."""
+    from app.services import unipoint_quote as uq
+
+    row = ["1", "020-160001-002-000", "HSM, ENHANCED MAINTENANCE SERVICE", "908-000364-003-000", "LUNA NETWORK HSM S750 (PED)",
+           "AB100001", "ABCD1-100001", "2027.01.01", "2027.12.31", "12 months", "2", "100", "200"]
+    s = uq.QuoteSettings()
+    lines, totals = uq.build_lines([uq.Purchase(rows=[row], included=[True], main=0) for _ in range(6)], s)
+    q = uq.QuoteDoc(project="p", recipient="r", date="2026-10-19", author={"name": "n"}, lines=lines, totals=totals, settings=s)
+    ws = load_workbook(io.BytesIO(uq.build_xlsx(q)[0])).worksheets[0]
+    assert [ws[f"A{r}"].value for r in range(18, 24)] == [1, 2, 3, 4, 5, 6]
+    assert ws["D24"].value == "- 이하여백 -" and ws["H25"].value == "=SUM(H18:H24)" and ws["H26"].value == "=H25*1.1"
+    assert ws.row_dimensions[23].height == ws.row_dimensions[21].height and ws.print_area.endswith("$J$34")
+
+
+def test_xls_documents(client, tmp_path: Path):
+    """예전 엑셀(.xls)도 규격서·제품 가격표·매입 금액으로 등록하고 항목을 뽑는다."""
+    import xlwt
+
+    admin = login(client, *ADMIN)
+    partner, vendor = _partner_with_vendor(client, admin, "XLS파트너", "XlsVendor")
+    sales = _sales(client, admin, "xls-sales@x.example.com", partner["id"])
+    book = xlwt.Workbook()
+    sheet = book.add_sheet("가격표")
+    for r, values in enumerate([("제품", "단가"), ("Luna HSM", 55176), ("CTM", 12000)]):
+        for c, v in enumerate(values):
+            sheet.write(r, c, v)
+    book.save(str(tmp_path / "price.xls"))
+    with (tmp_path / "price.xls").open("rb") as f:
+        r = client.post("/api/documents", data={"vendor_id": vendor["id"], "doc_type": "price_list", "title": "xls 가격표"}, files={"file": ("price.xls", f)}, headers=sales)
+    assert r.status_code == 201, r.text
+    doc = r.json()
+    assert doc["source_type"] == "xls"
+    run_pending_jobs()
+    assert client.get(f"/api/documents/{doc['id']}", headers=sales).json()["status"] == "parsed"
+    items = client.get(f"/api/documents/{doc['id']}/items", headers=sales).json()
+    assert items == {"columns": ["제품", "단가"], "rows": [["Luna HSM", "55176"], ["CTM", "12000"]]}
+    with (tmp_path / "price.xls").open("rb") as f:  # 브로슈어는 Excel 을 받지 않는다
+        assert client.post("/api/documents", data={"vendor_id": vendor["id"], "doc_type": "brochure"}, files={"file": ("price.xls", f)}, headers=sales).status_code == 400

@@ -286,9 +286,9 @@ function DownloadDialog({ doc, onClose }: { doc: DocumentSummary; onClose: () =>
 
 /** 파일 형식: 규격서는 Excel 도, 기타 문서(제품 가격표·매입 금액)는 PDF·Word·Excel 만 (웹 주소 불가). */
 const FILE_TYPES: Record<string, { accept: string; label: string }> = {
-  spec: { accept: ".pdf,.docx,.xlsx,.pptx", label: "PDF, Word, Excel, PowerPoint" },
-  price_list: { accept: ".pdf,.docx,.xlsx", label: "PDF, Word, Excel" },
-  purchase: { accept: ".pdf,.docx,.xlsx", label: "PDF, Word, Excel" },
+  spec: { accept: ".pdf,.docx,.xlsx,.xls,.pptx", label: "PDF, Word, Excel(.xlsx·.xls), PowerPoint" },
+  price_list: { accept: ".pdf,.docx,.xlsx,.xls", label: "PDF, Word, Excel(.xlsx·.xls)" },
+  purchase: { accept: ".pdf,.docx,.xlsx,.xls", label: "PDF, Word, Excel(.xlsx·.xls)" },
 };
 const DEFAULT_FILE_TYPE = { accept: ".pdf,.docx,.pptx", label: "PDF, Word, PowerPoint" };
 
@@ -311,28 +311,52 @@ function UploadForm({
   const [product, setProduct] = useState({ product: "", detail: "" });
   const [chosenMode, setMode] = useState<"file" | "url">("file");
   const mode = fileOnly ? "file" : chosenMode;
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]); // 여러 개를 한 번에 올릴 수 있다
+  const [progress, setProgress] = useState<{ done: number; total: number; failed: string[] } | null>(null);
   const [url, setUrl] = useState("");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [inputKey, setInputKey] = useState(0);
 
+  const send = (file: File | null, oneTitle: string) => {
+    const form = new FormData();
+    form.append("vendor_id", String(vendorId));
+    if (product.product) form.append("product", product.product);
+    if (product.detail) form.append("product_detail", product.detail);
+    form.append("doc_type", sendType);
+    if (sendType === "guide") form.append("guide_kind", guideKind);
+    if (oneTitle) form.append("title", oneTitle);
+    if (description.trim()) form.append("description", description.trim());
+    if (file) form.append("file", file);
+    if (mode === "url") form.append("url", url);
+    return api<DocumentSummary>("/documents", { method: "POST", body: form });
+  };
   const upload = useMutation({
-    mutationFn: () => {
-      const form = new FormData();
-      form.append("vendor_id", String(vendorId));
-      if (product.product) form.append("product", product.product);
-      if (product.detail) form.append("product_detail", product.detail);
-      form.append("doc_type", sendType);
-      if (sendType === "guide") form.append("guide_kind", guideKind);
-      if (title) form.append("title", title);
-      if (description.trim()) form.append("description", description.trim());
-      if (mode === "file" && file) form.append("file", file);
-      if (mode === "url") form.append("url", url);
-      return api<DocumentSummary>("/documents", { method: "POST", body: form });
+    // 여러 파일은 하나씩 차례로 올린다 (같은 종류·벤더·제품·설명, 제목은 각 파일 이름). 실패한 파일은 모아서 알려 준다.
+    mutationFn: async (): Promise<DocumentSummary> => {
+      if (mode === "url") return send(null, title);
+      const failed: string[] = [];
+      let last: DocumentSummary | null = null;
+      setProgress({ done: 0, total: files.length, failed });
+      for (const [i, f] of files.entries()) {
+        try {
+          last = await send(f, files.length === 1 ? title : "");
+        } catch (e) {
+          failed.push(`${f.name}: ${(e as Error).message}`);
+        }
+        setProgress({ done: i + 1, total: files.length, failed: [...failed] });
+      }
+      if (!last) throw new Error(failed.join("\n"));
+      if (failed.length)
+        throw Object.assign(new Error(`${files.length - failed.length}개는 올렸고 ${failed.length}개는 실패했습니다.\n${failed.join("\n")}`), { partial: last });
+      return last;
+    },
+    onError: (e) => {
+      if ((e as { partial?: DocumentSummary }).partial) queryClient.invalidateQueries({ queryKey: ["documents"] });
     },
     onSuccess: (doc) => {
-      setFile(null);
+      setFiles([]);
+      setProgress(null);
       setUrl("");
       setTitle("");
       setDescription("");
@@ -391,7 +415,12 @@ function UploadForm({
             />
             <label>
               제목 (선택)
-              <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="비우면 문서 속 제목 또는 파일명 사용" />
+              <input
+                value={files.length > 1 ? "" : title}
+                onChange={(e) => setTitle(e.target.value)}
+                disabled={files.length > 1}
+                placeholder={files.length > 1 ? "여러 파일은 각 파일 이름이 제목" : "비우면 문서 속 제목 또는 파일명 사용"}
+              />
             </label>
           </div>
           <label>
@@ -403,12 +432,28 @@ function UploadForm({
             {!fileOnly && <label className="check"><input type="radio" checked={mode === "url"} onChange={() => setMode("url")} />웹 문서 URL</label>}
           </div>
           {mode === "file" ? (
-            <input key={`${inputKey}-${sendType}`} type="file" accept={fileType.accept} onChange={(e) => setFile(e.target.files?.[0] ?? null)} required />
+            <>
+              <input
+                key={`${inputKey}-${sendType}`}
+                type="file"
+                multiple
+                accept={fileType.accept}
+                onChange={(e) => setFiles(Array.from(e.target.files ?? []))}
+                required
+              />
+              <p className="muted" style={{ margin: 0 }}>
+                여러 파일을 한 번에 고를 수 있습니다(Ctrl·Shift 키). {files.length > 1 && `${files.length}개 선택 — 같은 종류·벤더·제품·설명으로 올라갑니다.`}
+              </p>
+            </>
           ) : (
             <input type="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://" required />
           )}
-          {upload.error && <p className="error">{upload.error.message}</p>}
-          <div><button className="primary" disabled={upload.isPending}>{upload.isPending ? "올리는 중…" : "올리기"}</button></div>
+          {upload.error && <p className="error" style={{ whiteSpace: "pre-line" }}>{upload.error.message}</p>}
+          <div>
+            <button className="primary" disabled={upload.isPending}>
+              {upload.isPending ? (progress && progress.total > 1 ? `올리는 중… (${progress.done}/${progress.total})` : "올리는 중…") : files.length > 1 ? `${files.length}개 올리기` : "올리기"}
+            </button>
+          </div>
         </form>
       )}
     </section>

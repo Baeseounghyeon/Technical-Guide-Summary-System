@@ -39,15 +39,14 @@ def _shape(rows: list[list[str]]) -> dict:
 
 
 def _xlsx(path: Path) -> dict:
-    wb = load_workbook(str(path), read_only=True, data_only=True)
-    try:
-        for ws in wb.worksheets:
-            shaped = _shape([list(r) for r in ws.iter_rows(values_only=True)])
-            if shaped["rows"]:
-                return shaped
-        return {"columns": [], "rows": []}
-    finally:
-        wb.close()
+    """.xlsx·.xls: 내용이 있는 첫 시트."""
+    from .parsing.office import sheet_rows
+
+    for _, rows in sheet_rows(path)[1]:
+        shaped = _shape(rows)
+        if shaped["rows"]:
+            return shaped
+    return {"columns": [], "rows": []}
 
 
 def _docx(path: Path) -> dict:
@@ -84,7 +83,7 @@ def _pdf(path: Path) -> dict:
 
 def extract_items(path: Path, source_type: str) -> dict:
     """{columns: [머리글…], rows: [[칸…], …]}"""
-    parser = {"xlsx": _xlsx, "docx": _docx, "pdf": _pdf}.get(source_type)
+    parser = {"xlsx": _xlsx, "xls": _xlsx, "docx": _docx, "pdf": _pdf}.get(source_type)
     if parser is None:
         return {"columns": [], "rows": []}
     return parser(path)

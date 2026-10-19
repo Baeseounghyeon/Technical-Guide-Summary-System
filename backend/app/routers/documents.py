@@ -233,12 +233,12 @@ DOC_TYPE_LABELS = {
 }
 
 # 종류별로 올릴 수 있는 파일 형식. 규격서는 Excel 도, 제품 가격표·매입 금액은 PDF·Word·Excel 만(웹 주소 불가).
-EXTENSION_LABELS = {".pdf": "PDF", ".docx": "Word(.docx)", ".pptx": "PowerPoint(.pptx)", ".xlsx": "Excel(.xlsx)"}
+EXTENSION_LABELS = {".pdf": "PDF", ".docx": "Word(.docx)", ".pptx": "PowerPoint(.pptx)", ".xlsx": "Excel(.xlsx)", ".xls": "Excel(.xls)"}
 DEFAULT_EXTENSIONS = (".pdf", ".docx", ".pptx")
 ALLOWED_EXTENSIONS = {
-    "spec": (".pdf", ".docx", ".xlsx", ".pptx"),
-    "price_list": (".pdf", ".docx", ".xlsx"),
-    "purchase": (".pdf", ".docx", ".xlsx"),
+    "spec": (".pdf", ".docx", ".xlsx", ".xls", ".pptx"),
+    "price_list": (".pdf", ".docx", ".xlsx", ".xls"),
+    "purchase": (".pdf", ".docx", ".xlsx", ".xls"),
 }
 FILE_ONLY_TYPES = {"price_list", "purchase"}
 DownloadFormat = Literal["original", "docx", "pptx", "xlsx", "pdf"]

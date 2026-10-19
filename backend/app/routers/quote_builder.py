@@ -238,22 +238,26 @@ def formats_for(template: QuoteTemplate | None) -> list[str]:
 
 
 def render(payload: dict, template: QuoteTemplate | None, fmt: str, *, version: str = "", date: str | None = None) -> bytes:
-    """기본: 유니포인트 견적서 엑셀(+PDF). 직접 올린 양식이면 그 형식으로 양식을 채운다(PDF 는 기본 배치)."""
+    """기본: 유니포인트 견적서 엑셀(+PDF). 올린 엑셀 양식이 같은 견적서 모양이면 그 표 안에 채우고,
+    그 밖의 올린 양식(Word·Excel)은 자리 표시({{작성자}}·{{품목표}} 등)를 채운다."""
     q = quote_doc(payload, date)
-    if fmt == "pdf":
-        return uq.build_pdf(q)
     if template is None:
-        return uq.build_xlsx(q)[0]
+        return uq.build_pdf(q) if fmt == "pdf" else uq.build_xlsx(q)[0]
     with get_storage().local_path(template.file_path) as path:
+        if template.file_ext == "xlsx" and uq.is_quote_form(path):
+            return uq.build_pdf(q, path) if fmt == "pdf" else uq.build_xlsx(q, path)[0]
+        if fmt == "pdf":
+            return uq.build_pdf(q)
         return quote_export.build_quote(_legacy(q, version), fmt, path, template.file_ext)
 
 
 def render_preview(payload: dict, template: QuoteTemplate | None) -> str:
     q = quote_doc(payload)
     if template is None:
-        data, calc = uq.build_xlsx(q)
-        return uq.preview_html(data, calc)
+        return uq.preview_html(*uq.build_xlsx(q))
     with get_storage().local_path(template.file_path) as path:
+        if template.file_ext == "xlsx" and uq.is_quote_form(path):
+            return uq.preview_html(*uq.build_xlsx(q, path))
         return quote_export.preview_html(_legacy(q, ""), path, template.file_ext)
 
 

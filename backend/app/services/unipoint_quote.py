@@ -28,7 +28,7 @@ from pathlib import Path
 
 import pymupdf
 from openpyxl import load_workbook
-from openpyxl.utils import get_column_letter
+from openpyxl.utils import column_index_from_string, get_column_letter
 from openpyxl.utils.cell import range_boundaries
 
 from .thales_pdf import PURCHASE_COLUMNS
@@ -50,7 +50,6 @@ def template_path():
         raise RuntimeError("견적서 기본 양식(assets/quote_unipoint.xlsx)이 저장소에 없습니다. 관리자에게 문의하세요.")
     with storage.local_path(TEMPLATE_KEY) as path:
         yield path
-FIRST_ROW = 18  # 첫 품목 행
 MEDIA_XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
@@ -243,22 +242,126 @@ def author_line(a: dict) -> str:
     return " / ".join(x for x in (head, a.get("phone", ""), a.get("email", "")) if x)
 
 
-def build_xlsx(q: QuoteDoc) -> tuple[bytes, dict[str, object]]:
-    """견적서 엑셀과, 미리보기용 수식 칸 계산값 {칸: 값}."""
-    with template_path() as path:
+def _find(ws, test, rows=None):
+    """조건에 맞는 첫 칸 (행 순서)."""
+    for row in ws.iter_rows(min_row=rows[0] if rows else 1, max_row=rows[1] if rows else ws.max_row):
+        for c in row:
+            if isinstance(c.value, str) and test(c.value):
+                return c
+    return None
+
+
+@dataclass
+class FormLayout:
+    """유니포인트 견적서 양식의 위치 (머리글 글자로 찾는다)."""
+
+    header: int  # 'Product Number' 머리글 행
+    first: int  # 첫 품목 행
+    blank: int  # '- 이하여백 -' 행 (품목 행은 first ~ blank-1)
+    total: int  # 제안가 합계 (부가세별도)
+    vat: int  # 제안가 합계 (부가세포함)
+    cols: dict  # 항목 → 열 문자
+    proposal: str  # 제안금액 칸
+    recipient: str
+    project: str
+    date: str
+    target: str  # 목표 공급가 (P9)
+    discount: str  # 할인율 역산 (P10)
+
+
+def find_layout(ws) -> FormLayout | None:
+    """유니포인트 견적서 모양(머리글 'Product Number' · '- 이하여백 -' · 제안가 합계)이 아니면 None."""
+    head = _find(ws, lambda v: v.strip().lower() == "product number")
+    if head is None:
+        return None
+    h = head.row
+    blank = _find(ws, lambda v: "이하여백" in v, (h + 1, ws.max_row))
+    if blank is None:
+        return None
+    total = _find(ws, lambda v: "부가세별도" in v.replace(" ", ""), (blank.row, ws.max_row))
+    vat = _find(ws, lambda v: "부가세포함" in v.replace(" ", ""), (blank.row, ws.max_row))
+    if total is None or vat is None:
+        return None
+    names: dict[str, list[str]] = {}
+    for c in ws[h]:
+        if isinstance(c.value, str) and c.value.strip():
+            names.setdefault(c.value.strip(), []).append(c.column_letter)
+    pick = lambda name, default, nth=0: (names.get(name) or [])[nth] if len(names.get(name) or []) > nth else default  # noqa: E731
+    pn_col = head.column
+    cols = {
+        "no": get_column_letter(max(pn_col - 1, 1)),
+        "product_number": head.column_letter,
+        "product_name": pick("Product Name", "C"),
+        "description": pick("Product Description", "D"),
+        "quantity": pick("수량", "E"),
+        "unit": pick("단위", "F"),
+        "amount": pick("금액", "G"),
+        "supply": pick("공급가", "H"),
+        "discount": pick("할인율", "I"),
+        "note": pick("비고", "J"),
+        "cost": pick("매입단가", "N"),
+        "rate": pick("환율", "O"),
+        "cost_qty": pick("수량", "P", 1),
+        "cost_krw": pick("매입", "Q"),
+        "gp": pick("GP", "R"),
+    }
+    cols["cost_m"] = get_column_letter(max(column_index_from_string(cols["cost"]) - 1, 1))  # M = N*P
+    cols["gp_rate"] = pick("GP율", get_column_letter(column_index_from_string(cols["gp"]) + 1))
+    proposal = _find(ws, lambda v: "제안금액" in v or "NUMBERSTRING" in v.upper(), (1, h))
+    recipient = _find(ws, lambda v: "귀중" in v, (1, h))
+    project = _find(ws, lambda v: "프로젝트명" in v, (1, h))
+    date_label = _find(ws, lambda v: v.replace(" ", "").startswith("견적일자"), (1, h))
+    target_label = _find(ws, lambda v: "목표금액" in v.replace(" ", ""), (1, h))
+    return FormLayout(
+        header=h,
+        first=h + 1,
+        blank=blank.row,
+        total=total.row,
+        vat=vat.row,
+        cols=cols,
+        proposal=proposal.coordinate if proposal else f"B{h - 1}",
+        recipient=recipient.coordinate if recipient else "B7",
+        project=project.coordinate if project else "B8",
+        date=f"{get_column_letter(date_label.column + 1)}{date_label.row}" if date_label else "H8",
+        target=f"{target_label.column_letter}{target_label.row + 1}" if target_label else "P9",
+        discount=f"{target_label.column_letter}{target_label.row + 2}" if target_label else "P10",
+    )
+
+
+def is_quote_form(path: Path) -> bool:
+    """올린 엑셀 양식이 유니포인트 견적서 모양이면 표 안에 바로 채운다."""
+    try:
         wb = load_workbook(str(path))
+    except Exception:  # noqa: BLE001
+        return False
+    return find_layout(wb.worksheets[0]) is not None
+
+
+def build_xlsx(q: QuoteDoc, template: Path | None = None) -> tuple[bytes, dict[str, object]]:
+    """양식의 품목 표(머리글 아래 ~ '- 이하여백 -' 위) 안에 값을 채운다. 품목이 표보다 많을 때만 행을 늘린다.
+    (견적서 엑셀, 미리보기용 수식 칸 계산값 {칸: 값})"""
+    if template is None:
+        with template_path() as path:
+            wb = load_workbook(str(path))
+    else:
+        wb = load_workbook(str(template))
     ws = wb.worksheets[0]
-    n = max(len(q.lines), 1)
-    if n > 1:
-        _shift_rows(ws, FIRST_ROW + 1, n - 1)
-        for r in range(FIRST_ROW + 1, FIRST_ROW + n):
-            for col in range(1, 20):
-                src = ws.cell(row=FIRST_ROW, column=col)
-                if src.has_style:
-                    ws.cell(row=r, column=col)._style = copy(src._style)
-            ws.row_dimensions[r].height = ws.row_dimensions[FIRST_ROW].height
-    last = FIRST_ROW + n - 1
-    blank, t1, t2 = last + 1, last + 2, last + 3  # '- 이하여백 -' 행, 합계(부가세별도), 합계(부가세포함)
+    L = find_layout(ws)
+    if L is None:
+        raise ValueError("견적서 양식에서 품목 표('Product Number' 머리글, '- 이하여백 -', 제안가 합계)를 찾지 못했습니다.")
+    capacity = L.blank - L.first
+    extra = len(q.lines) - capacity
+    if extra > 0:  # 표보다 품목이 많으면 '- 이하여백 -' 위에 행을 늘린다 (마지막 품목 행 서식으로)
+        _shift_rows(ws, L.blank, extra)
+        src = L.blank - 1
+        for r in range(L.blank, L.blank + extra):
+            for col in range(1, ws.max_column + 1):
+                a = ws.cell(row=src, column=col)
+                if a.has_style:
+                    ws.cell(row=r, column=col)._style = copy(a._style)
+            ws.row_dimensions[r].height = ws.row_dimensions[src].height
+        L = find_layout(ws)
+    c = L.cols
     s = q.settings
     calc: dict[str, object] = {}
     a = q.author
@@ -267,44 +370,52 @@ def build_xlsx(q: QuoteDoc) -> tuple[bytes, dict[str, object]]:
     ws["J1"] = a.get("address", "")
     ws["J2"] = a.get("contact", "")
     ws["B2"] = author_line(a)
-    ws["B7"] = f"{q.recipient} 귀중"
-    ws["B8"] = f"프로젝트명 : {q.project}"
-    ws["H8"] = datetime.strptime(q.date, "%Y-%m-%d")
-    # 할인율 역산 (O8~P10)
-    if s.target_total:
-        ws["P9"] = s.target_total
-        ws["P10"] = f"=1-P9/SUM(G{FIRST_ROW}:G{last})"
-        calc["P10"] = q.totals["discount"]
+    ws[L.recipient] = f"{q.recipient} 귀중"
+    ws[L.project] = f"프로젝트명 : {q.project}"
+    ws[L.date] = datetime.strptime(q.date, "%Y-%m-%d")
+    last = L.first + max(len(q.lines), 1) - 1
+    if s.target_total:  # 할인율 역산 (원래 견적서 O8~P10)
+        ws[L.target] = s.target_total
+        ws[L.discount] = f"=1-{L.target}/SUM({c['amount']}{L.first}:{c['amount']}{last})"
+        calc[L.discount] = q.totals["discount"]
+    else:
+        ws[L.target] = None
+        ws[L.discount] = None
+    for r in range(L.first, L.blank):  # 표 안의 이전 값을 비운 뒤 채운다
+        for key in c:
+            ws[f"{c[key]}{r}"] = None
     for i, line in enumerate(q.lines):
-        r = FIRST_ROW + i
-        ws[f"A{r}"] = line["no"]
-        ws[f"B{r}"] = line["product_number"]
-        ws[f"C{r}"] = line["product_name"]
-        ws[f"D{r}"] = line["description"]
-        ws[f"E{r}"] = line["quantity"]
-        ws[f"F{r}"] = line["unit"]
-        ws[f"G{r}"] = f"=N{r}*O{r}*{s.multiplier:g}"
-        ws[f"H{r}"] = f"=G{r}*(1-I{r})"
-        ws[f"I{r}"] = line["discount"]  # 원래 견적서처럼 역산한 값을 숫자로
-        ws[f"J{r}"] = line["note"]
-        ws[f"M{r}"] = f"=N{r}*P{r}"
-        ws[f"N{r}"] = line["cost_usd"]
-        ws[f"O{r}"] = s.exchange_rate
-        ws[f"P{r}"] = 1
-        ws[f"Q{r}"] = f"=N{r}*O{r}*P{r}"
-        ws[f"R{r}"] = f"=H{r}-Q{r}"
-        ws[f"S{r}"] = f"=R{r}/H{r}"
-        calc.update({f"G{r}": line["amount"], f"H{r}": line["supply"], f"M{r}": line["cost_usd"], f"Q{r}": line["cost_krw"],
-                     f"R{r}": line["gp"], f"S{r}": line["gp_rate"]})
-    ws[f"H{t1}"] = f"=SUM(H{FIRST_ROW}:H{blank})"
-    ws[f"Q{t1}"] = f"=SUM(Q{FIRST_ROW}:Q{blank})"
-    ws[f"R{t1}"] = f"=H{t1}-Q{t1}"
-    ws[f"S{t1}"] = f"=R{t1}/H{t1}"
-    ws[f"H{t2}"] = f"=H{t1}*1.1"
-    ws["B16"] = f'="제안금액 : 일금"&NUMBERSTRING(H{t2},1)&"원정(부가세 포함)"'
+        r = L.first + i
+        cell = lambda key: f"{c[key]}{r}"  # noqa: E731
+        ws[cell("no")] = line["no"]
+        ws[cell("product_number")] = line["product_number"]
+        ws[cell("product_name")] = line["product_name"]
+        ws[cell("description")] = line["description"]
+        ws[cell("quantity")] = line["quantity"]
+        ws[cell("unit")] = line["unit"]
+        ws[cell("amount")] = f"={cell('cost')}*{cell('rate')}*{s.multiplier:g}"
+        ws[cell("supply")] = f"={cell('amount')}*(1-{cell('discount')})"
+        ws[cell("discount")] = line["discount"]  # 원래 견적서처럼 역산한 값을 숫자로
+        ws[cell("note")] = line["note"]
+        ws[cell("cost_m")] = f"={cell('cost')}*{cell('cost_qty')}"
+        ws[cell("cost")] = line["cost_usd"]
+        ws[cell("rate")] = s.exchange_rate
+        ws[cell("cost_qty")] = 1
+        ws[cell("cost_krw")] = f"={cell('cost')}*{cell('rate')}*{cell('cost_qty')}"
+        ws[cell("gp")] = f"={cell('supply')}-{cell('cost_krw')}"
+        ws[cell("gp_rate")] = f"={cell('gp')}/{cell('supply')}"
+        calc.update({cell("amount"): line["amount"], cell("supply"): line["supply"], cell("cost_m"): line["cost_usd"],
+                     cell("cost_krw"): line["cost_krw"], cell("gp"): line["gp"], cell("gp_rate"): line["gp_rate"]})
+    h, q_, r_, s_ = c["supply"], c["cost_krw"], c["gp"], c["gp_rate"]
+    ws[f"{h}{L.total}"] = f"=SUM({h}{L.first}:{h}{L.blank})"
+    ws[f"{q_}{L.total}"] = f"=SUM({q_}{L.first}:{q_}{L.blank})"
+    ws[f"{r_}{L.total}"] = f"={h}{L.total}-{q_}{L.total}"
+    ws[f"{s_}{L.total}"] = f"={r_}{L.total}/{h}{L.total}"
+    ws[f"{h}{L.vat}"] = f"={h}{L.total}*1.1"
+    ws[L.proposal] = f'="제안금액 : 일금"&NUMBERSTRING({h}{L.vat},1)&"원정(부가세 포함)"'
     t = q.totals
-    calc.update({f"H{t1}": t["supply"], f"Q{t1}": t["cost_krw"], f"R{t1}": t["gp"], f"S{t1}": t["gp_rate"], f"H{t2}": t["vat_included"],
-                 "B16": f"제안금액 : 일금{korean_amount(t['vat_included'])}원정(부가세 포함)"})
+    calc.update({f"{h}{L.total}": t["supply"], f"{q_}{L.total}": t["cost_krw"], f"{r_}{L.total}": t["gp"], f"{s_}{L.total}": t["gp_rate"],
+                 f"{h}{L.vat}": t["vat_included"], L.proposal: f"제안금액 : 일금{korean_amount(t['vat_included'])}원정(부가세 포함)"})
     out = io.BytesIO()
     wb.save(out)
     return out.getvalue(), calc
@@ -390,15 +501,20 @@ def preview_html(data: bytes, calc: dict) -> str:
 
 # ---------- PDF (고객용 A~J 열 내용, 엑셀 견적서와 같은 순서) ----------
 
-def build_pdf(q: QuoteDoc) -> bytes:
+def build_pdf(q: QuoteDoc, template: Path | None = None) -> bytes:
     """고객에게 보내는 내용(인쇄 영역 A~J)만 담는다. 매입·GP 는 넣지 않는다."""
-    with template_path() as path:
-        wb = load_workbook(str(path))
+    if template is None:
+        with template_path() as path:
+            wb = load_workbook(str(path))
+    else:
+        wb = load_workbook(str(template))
     ws = wb.worksheets[0]
     esc = html.escape
     fixed = lambda ref: esc(str(ws[ref].value or ""))  # noqa: E731 — 양식의 고정 문구
-    # 양식에 남아 있는 Remark 문구 (합계 아래 B열)
-    remarks = [ws.cell(row=r, column=2).value for r in range(22, ws.max_row + 1) if ws.cell(row=r, column=2).value]
+    # 양식에 남아 있는 Remark 문구 (합계 행 아래 B열)
+    layout = find_layout(ws)
+    start = (layout.vat + 1) if layout else ws.max_row + 1
+    remarks = [ws.cell(row=r, column=2).value for r in range(start, ws.max_row + 1) if ws.cell(row=r, column=2).value]
     a = q.author
     th = "border:1px solid #666;background-color:#DCE3EE;padding:3px;font-size:7.5pt;text-align:center;font-weight:bold"
     td = "border:1px solid #666;padding:3px;font-size:7.5pt;vertical-align:middle"

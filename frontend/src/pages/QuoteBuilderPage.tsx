@@ -244,18 +244,29 @@ export default function QuoteBuilderPage() {
     }
   };
   // 4단계: 매입 견적은 여러 건을 고른다 (한 건 = 견적서 한 행)
+  // PDF 를 읽는 동안(수 초)에도 선택된 것으로 보이게 하고, 그동안 다시 누르거나 '모두 선택'해도 두 번 담기지 않게 한다
+  const [loadingIds, setLoadingIds] = useState<number[]>([]);
+  const loadingRef = useRef(new Set<number>());
   const togglePurchase = async (d: Picked) => {
+    if (loadingRef.current.has(d.id)) return;
     if (purchases.some((p) => p.doc.id === d.id)) {
       setPurchases((list) => withDefaultMains(list.filter((p) => p.doc.id !== d.id)));
       return;
     }
+    loadingRef.current.add(d.id);
+    setLoadingIds([...loadingRef.current]);
     try {
       const items = await api<Items & { meta?: PurchaseMeta }>(`/documents/${d.id}/items`);
       setPurchases((list) =>
-        withDefaultMains([...list, { doc: d, meta: items.meta ?? {}, columns: items.columns, rows: items.rows, included: items.rows.map(() => true), main: 0 }]),
+        list.some((p) => p.doc.id === d.id)
+          ? list
+          : withDefaultMains([...list, { doc: d, meta: items.meta ?? {}, columns: items.columns, rows: items.rows, included: items.rows.map(() => true), main: 0 }]),
       );
     } catch (e) {
       setError((e as Error).message);
+    } finally {
+      loadingRef.current.delete(d.id);
+      setLoadingIds([...loadingRef.current]);
     }
   };
 
@@ -332,7 +343,7 @@ export default function QuoteBuilderPage() {
     1: templateChosen,
     2: !!priceDoc || priceSkipped, // 가격표는 참고용이라 건너뛸 수 있다
     3: priceSkipped || (!!price && price.checked.some(Boolean)),
-    4: purchases.length > 0,
+    4: purchases.length > 0 && loadingIds.length === 0,
     5: purchases.length > 0 && purchases.every((p) => p.included.some(Boolean)),
     6: !!author.name.trim(),
     7: !!title.trim() && !!recipient.trim() && Number(settings.exchange_rate) > 0 && Number(settings.multiplier) > 0,
@@ -375,7 +386,12 @@ export default function QuoteBuilderPage() {
           </>
         )}
         {tab === "price_list" && <DocPicker docType="price_list" checked={priceDoc ? [priceDoc.id] : []} onPick={pickPrice} />}
-        {tab === "purchase" && <DocPicker docType="purchase" multiple checked={purchases.map((p) => p.doc.id)} onPick={togglePurchase} />}
+        {tab === "purchase" && (
+          <>
+            {loadingIds.length > 0 && <p className="muted">매입 견적 PDF를 읽는 중… ({loadingIds.length}건)</p>}
+            <DocPicker docType="purchase" multiple checked={[...purchases.map((p) => p.doc.id), ...loadingIds]} onPick={togglePurchase} />
+          </>
+        )}
         {tab === "generated" && <GeneratedPicker checked={basedOn?.id ?? null} onPick={loadGenerated} />}
       </section>
 

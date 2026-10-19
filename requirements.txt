@@ -16,3 +16,4 @@ anthropic>=1.0
 tzdata>=2024.1
 psycopg[binary]>=3.2
 openpyxl>=3.1
+xlrd>=2.0.1  # 예전 엑셀(.xls) 읽기

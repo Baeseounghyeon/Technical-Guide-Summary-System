@@ -81,24 +81,51 @@ def parse_pptx(path: Path) -> ParsedDocument:
     return ParsedDocument(title=prs.core_properties.title or None, page_count=len(prs.slides), sections=sections)
 
 
+def sheet_rows(path: Path) -> tuple[str | None, list[tuple[str, list[list]]]]:
+    """엑셀 시트별 행 (제목, [(시트 이름, 행들)]). .xlsx 는 openpyxl, 예전 형식 .xls 는 xlrd 로 읽는다."""
+    if path.suffix.lower() == ".xls":
+        import xlrd
+
+        book = xlrd.open_workbook(str(path))
+        sheets = []
+        for sh in book.sheets():
+            rows = []
+            for r in range(sh.nrows):
+                row = []
+                for c in range(sh.ncols):
+                    cell = sh.cell(r, c)
+                    if cell.ctype == xlrd.XL_CELL_DATE:
+                        row.append(xlrd.xldate_as_datetime(cell.value, book.datemode))
+                    elif cell.ctype in (xlrd.XL_CELL_EMPTY, xlrd.XL_CELL_BLANK):
+                        row.append(None)
+                    else:
+                        row.append(cell.value)
+                rows.append(row)
+            sheets.append((sh.name, rows))
+        return None, sheets
+    wb = load_workbook(str(path), read_only=True, data_only=True)
+    try:
+        title = wb.properties.title if wb.properties else None
+        return title, [(ws.title, [list(r) for r in ws.iter_rows(values_only=True)]) for ws in wb.worksheets]
+    finally:
+        wb.close()
+
+
 def parse_xlsx(path: Path) -> ParsedDocument:
     """시트마다 한 섹션(행은 ' | ' 로 이은 줄). '항목 | 값' 처럼 두 칸만 찬 행은 그 아래 하위 섹션으로도 둔다
-    (규격서 재사용 때 항목 이름으로 값을 찾기 위해)."""
-    wb = load_workbook(str(path), read_only=True, data_only=True)
+    (규격서 재사용 때 항목 이름으로 값을 찾기 위해). .xls 도 같은 방식."""
+    title, sheets = sheet_rows(path)
     sections: list[ParsedSection] = []
-    for index, ws in enumerate(wb.worksheets, start=1):
+    for index, (sheet_name, rows) in enumerate(sheets, start=1):
         lines: list[str] = []
         pairs: list[ParsedSection] = []
-        for row in ws.iter_rows(values_only=True):
+        for row in rows:
             cells = [str(v).strip() for v in row if v is not None and str(v).strip()]
             if not cells:
                 continue
             lines.append(" | ".join(cells))
             if len(cells) == 2:
                 pairs.append(ParsedSection(cells[0][:500], 2, cells[1], index, index))
-        sections.append(ParsedSection(ws.title or f"시트 {index}", 1, "\n".join(lines), index, index))
+        sections.append(ParsedSection(sheet_name or f"시트 {index}", 1, "\n".join(lines), index, index))
         sections += pairs
-    title = wb.properties.title if wb.properties else None
-    sheet_count = len(wb.worksheets)
-    wb.close()
-    return ParsedDocument(title=title or None, page_count=sheet_count, sections=sections)
+    return ParsedDocument(title=title or None, page_count=len(sheets), sections=sections)
