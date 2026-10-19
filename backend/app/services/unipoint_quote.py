@@ -60,6 +60,9 @@ class QuoteSettings:
     multiplier: float = 2.3  # G = N × O × 배수
     discount_pct: float = 0.0  # 할인율(%) — 목표 금액이 없을 때
     target_total: float | None = None  # P9 목표 공급가 합계. 있으면 I = 1 - P9 / SUM(G)
+    current_rate: float | None = None  # P12 당시 환율 (직접 입력, 참고용)
+    ref_amount_1: float | None = None  # U14 참고 금액 (T13 = 4,000,000 / U14)
+    ref_amount_2: float | None = None  # U15 참고 금액
 
 
 @dataclass
@@ -100,6 +103,13 @@ def product_family(desc: str) -> str:
         words = words[:-1]
     small = {"HSM", "PED", "USB", "PCIE", "CTM", "CTE", "DDC"}
     return " ".join(w if w.upper() in small else w.capitalize() for w in words) or head
+
+
+def _description_parts(row: list[str]) -> tuple[str, str]:
+    """(제품·사양·시리얼 줄, '(시작 ~ 종료) 1year MA' 줄). 원래 견적서처럼 앞은 보통 검은 글씨, 기간 줄은 굵은 빨간 글씨."""
+    text = _description(row)
+    head, sep, period = text.rpartition("\n")
+    return (head + sep, period) if period.endswith("MA") and ("~" in period or period.endswith("year MA")) else (text, "")
 
 
 def _description(row: list[str]) -> str:
@@ -161,6 +171,7 @@ def build_lines(purchases: list[Purchase], s: QuoteSettings) -> tuple[list[dict]
             "product_number": _v(main, "유지보수 제품 번호") or _v(main, "대상 제품 번호"),
             "product_name": product_family(_v(main, "대상 제품")),
             "description": _description(main),
+            "description_parts": _description_parts(main),
             "quantity": int(_num(_v(main, "수량"))),
             "unit": "식",
             "note": "\n".join(x for x in (_service(_v(main, "서비스")), f"({contract})" if contract else "") if x),
@@ -378,6 +389,22 @@ def find_layout(ws) -> FormLayout | None:
     )
 
 
+def _rich_description(target, line: dict):
+    """Product Description: 제품·사양·시리얼은 보통 검은 글씨, '(시작 ~ 종료) 1year MA' 는 굵은 빨간 글씨 (원래 견적서와 같게)."""
+    from openpyxl.cell.rich_text import CellRichText, TextBlock
+    from openpyxl.cell.text import InlineFont
+
+    main, period = line.get("description_parts") or (line["description"], "")
+    if not period:
+        return main
+    f = target.font
+    base = {"rFont": f.name, "sz": f.sz or 10}
+    return CellRichText(
+        TextBlock(InlineFont(b=False, color="FF000000", **base), main),
+        TextBlock(InlineFont(b=True, color="FFFF0000", **base), period),
+    )
+
+
 def is_quote_form(path: Path) -> bool:
     """올린 엑셀 양식이 유니포인트 견적서 모양이면 표 안에 바로 채운다."""
     try:
@@ -395,7 +422,7 @@ def build_xlsx(q: QuoteDoc, template: Path | None = None) -> tuple[bytes, dict[s
             raw = path.read_bytes()
     else:
         raw = Path(template).read_bytes()
-    wb = load_workbook(io.BytesIO(raw))
+    wb = load_workbook(io.BytesIO(raw), rich_text=True)  # 양식의 부분 서식 글자도 그대로
     drawing = read_drawing(raw)  # 제목 상자·회사 상자 같은 도형은 openpyxl 이 버리므로 따로 옮긴다
     ws = wb.worksheets[0]
     ws._images = []  # 그림도 드로잉과 함께 옮긴다 (두 번 들어가지 않게)
@@ -429,13 +456,16 @@ def build_xlsx(q: QuoteDoc, template: Path | None = None) -> tuple[bytes, dict[s
     ws[L.project] = f"프로젝트명 : {q.project}"
     ws[L.date] = datetime.strptime(q.date, "%Y-%m-%d")
     last = L.first + max(len(q.lines), 1) - 1
-    if s.target_total:  # 할인율 역산 (원래 견적서 O8~P10)
-        ws[L.target] = s.target_total
-        ws[L.discount] = f"=1-{L.target}/SUM({c['amount']}{L.first}:{c['amount']}{last})"
-        calc[L.discount] = q.totals["discount"]
-    else:
-        ws[L.target] = None
-        ws[L.discount] = None
+    # 할인율 역산 (원래 견적서 O8~P10): 수식은 늘 두고, 목표 금액(P9)은 입력했을 때만
+    ws[L.target] = s.target_total or None
+    ws[L.discount] = f"=1-{L.target}/SUM({c['amount']}{L.first}:{c['amount']}{last})"
+    calc[L.discount] = q.totals["discount"] if s.target_total else 1.0
+    # 직접 입력하는 계산 메모 (인쇄 영역 밖): 당시 환율(P12), 참고 금액(U14·U15)
+    rate_label = _find(ws, lambda v: v.replace(" ", "") == "당시환율")
+    if rate_label is not None:
+        ws.cell(row=rate_label.row, column=rate_label.column + 1, value=s.current_rate)
+    for ref, value in (("U14", s.ref_amount_1), ("U15", s.ref_amount_2)):
+        ws[ref] = value
     for r in range(L.first, L.blank):  # 표 안의 이전 값을 비운 뒤 채운다
         for key in c:
             ws[f"{c[key]}{r}"] = None
@@ -445,7 +475,7 @@ def build_xlsx(q: QuoteDoc, template: Path | None = None) -> tuple[bytes, dict[s
         ws[cell("no")] = line["no"]
         ws[cell("product_number")] = line["product_number"]
         ws[cell("product_name")] = line["product_name"]
-        ws[cell("description")] = line["description"]
+        ws[cell("description")] = _rich_description(ws[cell("description")], line)
         ws[cell("quantity")] = line["quantity"]
         ws[cell("unit")] = line["unit"]
         ws[cell("amount")] = f"={cell('cost')}*{cell('rate')}*{s.multiplier:g}"

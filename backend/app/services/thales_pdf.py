@@ -86,6 +86,23 @@ def _split_part(text: str) -> tuple[str, str]:
     return m.group(0), text[m.end():].lstrip(" /").strip()
 
 
+def _period(dates: list[tuple], months: re.Match | None, expiry: str) -> tuple[str, str]:
+    """(시작일, 종료일). PDF 에 날짜가 없으면(예: '12 months'만) 견적 만료일 다음 날부터 커버리지 개월 동안으로 본다.
+    (원래 견적서: Q-393448 만료일 2026-09-30 → 2026.10.01 ~ 2027.09.30)"""
+    if len(dates) >= 2:
+        return _date(*dates[0]), _date(*dates[1])
+    if months and re.match(r"\d{4}-\d{2}-\d{2}$", expiry or ""):
+        from datetime import date, timedelta
+
+        y, m, d = (int(x) for x in expiry.split("-"))
+        start = date(y, m, d) + timedelta(days=1)
+        total = start.month - 1 + int(months.group(1))
+        nxt = date(start.year + total // 12, total % 12 + 1, 1)  # 시작 달 + 개월의 1일
+        end = nxt.replace(day=min(start.day, 28)) - timedelta(days=1) if start.day > 1 else nxt - timedelta(days=1)
+        return start.strftime("%Y.%m.%d"), end.strftime("%Y.%m.%d")
+    return (_date(*dates[0]) if dates else ""), ""
+
+
 def _col(columns: list[str], *keys: str, exclude: tuple[str, ...] = ()) -> int | None:
     for i, c in enumerate(columns):
         low = " ".join((c or "").split()).lower()
@@ -110,6 +127,7 @@ def parse_purchase_quote(path: Path) -> dict:
         "end_user": _after(text, "EndUser Contact:") or _after(text, "End User Account Name:"),
         "partner": _after(text, "Primary Partner Information"),
         "quote_total": money((re.search(r"Quote Total:\s*(USD\s*[\d,.]+)", text) or [None, ""])[1]),
+        "quote_expiry": _after(text, "Quote Expiry:"),
     }
     rows: list[list[str]] = []
     for table in tables:
@@ -146,8 +164,7 @@ def parse_purchase_quote(path: Path) -> dict:
                 c_desc,
                 " / ".join(dict.fromkeys(_SERIAL.findall(ref))),
                 " / ".join(dict.fromkeys(_CONTRACT.findall(ref))),
-                _date(*dates[0]) if len(dates) > 0 else "",
-                _date(*dates[1]) if len(dates) > 1 else "",
+                *(_period(dates, months, meta["quote_expiry"])),
                 f"{months.group(1)} months" if months else "",
                 q[:-3] if q.endswith(".00") else q,
                 money(get(unit)),

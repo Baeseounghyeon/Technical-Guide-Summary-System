@@ -38,7 +38,16 @@ interface Purchase {
   main: number; // 대표 라인 (품명·설명·시리얼·수량·계약 번호)
   mainTouched?: boolean;
 }
-type Settings = { exchange_rate: string; multiplier: string; mode: "target" | "discount"; target_total: string; discount_pct: string };
+type Settings = {
+  exchange_rate: string;
+  multiplier: string;
+  mode: "target" | "discount";
+  target_total: string;
+  discount_pct: string;
+  current_rate: string; // P12 당시 환율 (직접 입력)
+  ref_amount_1: string; // U14 참고 금액
+  ref_amount_2: string; // U15 참고 금액
+};
 interface Line {
   no: number;
   quote_number: string;
@@ -80,7 +89,15 @@ interface GeneratedQuote {
     price?: Items;
     purchases?: { document_id: number; meta: PurchaseMeta; rows: string[][]; included: boolean[]; main: number }[];
     author?: Partial<Author>;
-    settings?: { exchange_rate?: number; multiplier?: number; discount_pct?: number; target_total?: number | null };
+    settings?: {
+      exchange_rate?: number;
+      multiplier?: number;
+      discount_pct?: number;
+      target_total?: number | null;
+      current_rate?: number | null;
+      ref_amount_1?: number | null;
+      ref_amount_2?: number | null;
+    };
   };
   attachments: { kind: "price_list" | "purchase"; document_id: number; title: string | null }[];
   created_at: string;
@@ -188,7 +205,16 @@ export default function QuoteBuilderPage() {
   const [titleTouched, setTitleTouched] = useState(false);
   const [recipient, setRecipient] = useState("");
   const [date, setDate] = useState(today());
-  const [settings, setSettings] = useState<Settings>({ exchange_rate: "1360", multiplier: "2.3", mode: "target", target_total: "", discount_pct: "0" });
+  const [settings, setSettings] = useState<Settings>({
+    exchange_rate: "1360",
+    multiplier: "2.3",
+    mode: "target",
+    target_total: "",
+    discount_pct: "0",
+    current_rate: "",
+    ref_amount_1: "",
+    ref_amount_2: "",
+  });
   const [basedOn, setBasedOn] = useState<GeneratedQuote | null>(null);
   const [created, setCreated] = useState<GeneratedQuote | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -307,6 +333,9 @@ export default function QuoteBuilderPage() {
       mode: s.target_total ? "target" : "discount",
       target_total: s.target_total ? String(s.target_total) : "",
       discount_pct: String(s.discount_pct ?? 0),
+      current_rate: s.current_rate ? String(s.current_rate) : "",
+      ref_amount_1: s.ref_amount_1 ? String(s.ref_amount_1) : "",
+      ref_amount_2: s.ref_amount_2 ? String(s.ref_amount_2) : "",
     });
     setBasedOn(g);
     setCreated(null);
@@ -335,6 +364,9 @@ export default function QuoteBuilderPage() {
       multiplier: Number(settings.multiplier) || 0,
       discount_pct: settings.mode === "discount" ? Number(settings.discount_pct) || 0 : 0,
       target_total: settings.mode === "target" && Number(settings.target_total) > 0 ? Number(settings.target_total) : null,
+      current_rate: Number(settings.current_rate) > 0 ? Number(settings.current_rate) : null,
+      ref_amount_1: Number(settings.ref_amount_1) > 0 ? Number(settings.ref_amount_1) : null,
+      ref_amount_2: Number(settings.ref_amount_2) > 0 ? Number(settings.ref_amount_2) : null,
     },
     based_on_id: basedOn?.id ?? null,
   });
@@ -866,6 +898,23 @@ function FinalStep(props: {
             <input inputMode="decimal" value={s.discount_pct} onChange={(e) => props.setSettings({ ...s, discount_pct: e.target.value })} />
           </label>
         )}
+      </div>
+      <div className="form-row">
+        <label style={{ flex: "0 0 160px" }}>
+          당시 환율 (P12, 참고)
+          <input inputMode="decimal" value={s.current_rate} onChange={(e) => props.setSettings({ ...s, current_rate: e.target.value.replace(/[^\d.]/g, "") })} placeholder="예: 1400" />
+        </label>
+        <label style={{ flex: "0 0 200px" }}>
+          참고 금액 1 (U14)
+          <input inputMode="numeric" value={s.ref_amount_1} onChange={(e) => props.setSettings({ ...s, ref_amount_1: e.target.value.replace(/[^\d.]/g, "") })} placeholder="T13 = 4,000,000 ÷ U14" />
+        </label>
+        <label style={{ flex: "0 0 200px" }}>
+          참고 금액 2 (U15)
+          <input inputMode="numeric" value={s.ref_amount_2} onChange={(e) => props.setSettings({ ...s, ref_amount_2: e.target.value.replace(/[^\d.]/g, "") })} />
+        </label>
+        <p className="muted" style={{ flex: "1 1 260px", margin: 0, alignSelf: "flex-end" }}>
+          견적서 인쇄 영역 밖 계산 메모 칸에 들어갑니다(직접 입력, 비우면 빈칸). 수식(Q7·R7·T13·R15 등)은 양식 그대로 둡니다.
+        </p>
       </div>
       {block(1, "견적서 양식", <p>{template === undefined ? "아직 고르지 않음" : template ? `${template.name} (${template.file_name})` : "기본 양식 (유니포인트 견적서 엑셀)"}</p>)}
       {block(2, "제품 가격표 (참고)", <p>{props.priceDoc?.title ?? (props.priceDoc ? "(제목 없음)" : "사용 안 함")}</p>)}

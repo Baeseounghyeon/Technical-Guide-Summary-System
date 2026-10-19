@@ -183,6 +183,9 @@ class Settings(BaseModel):
     multiplier: float = Field(2.3, gt=0)  # G = N × O × 배수
     discount_pct: float = Field(0, ge=0, le=100)
     target_total: float | None = Field(None, gt=0)  # P9 목표 공급가 합계 → 할인율 역산
+    current_rate: float | None = Field(None, gt=0)  # P12 당시 환율 (직접 입력, 참고용)
+    ref_amount_1: float | None = Field(None, gt=0)  # U14 참고 금액
+    ref_amount_2: float | None = Field(None, gt=0)  # U15 참고 금액
 
 
 class QuoteIn(BaseModel):
