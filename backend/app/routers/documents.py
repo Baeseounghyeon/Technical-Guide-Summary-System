@@ -40,9 +40,8 @@ router = APIRouter(prefix="/api", tags=["원본 문서"])
 def create_document(
     vendor_id: int = Form(...),
     title: str | None = Form(None),
-    doc_type: Literal["spec", "guide", "quote", "brochure", "spec_extra"] = Form("guide"),
+    doc_type: Literal["spec", "guide", "quote", "price_list", "purchase", "brochure"] = Form("guide"),
     guide_kind: Literal["technical", "troubleshooting"] = Form("technical"),
-    extra_kind: Literal["price_list", "purchase"] | None = Form(None),
     product: str | None = Form(None),
     product_detail: str | None = Form(None),
     description: str | None = Form(None),
@@ -55,16 +54,15 @@ def create_document(
 ) -> DocumentOut:
     """파일(PDF/Word/PPT, 규격서·기타 문서는 Excel 도) 또는 웹 문서 URL을 등록하고 파싱 작업을 예약한다."""
     ensure_vendor_access(db, user, vendor_id)
-    require_permission(db, user, permission_for(doc_type))  # 엔지니어: 가이드·브로슈어 / 영업: 규격서·견적서·브로슈어 (+ 승인된 추가 권한)
-    if doc_type == DocType.SPEC_EXTRA and extra_kind is None:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "기타 문서 종류(제품 가격표·매입 금액)를 고르세요.")
+    # 엔지니어: 가이드·브로슈어 / 영업: 규격서·견적서·제품 가격표·매입 금액·브로슈어 (+ 승인된 추가 권한)
+    require_permission(db, user, doc_type)
     product, product_detail = (product or "").strip() or None, (product_detail or "").strip() or None
     vendor = db.get(Vendor, vendor_id)
     if error := validate_product(vendor.name, product, product_detail):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, error)
     has_file = file is not None or bool(storage_key)
-    if doc_type == DocType.SPEC_EXTRA and not has_file:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "기타 문서는 파일(PDF, Word, Excel)로 등록하세요.")
+    if doc_type in FILE_ONLY_TYPES and not has_file:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "제품 가격표·매입 금액은 파일(PDF, Word, Excel)로 등록하세요.")
     if has_file == bool(url):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "파일 또는 URL 중 하나만 입력하세요.")
 
@@ -75,7 +73,6 @@ def create_document(
         title=title or None,
         doc_type=doc_type,
         guide_kind=guide_kind if doc_type == DocType.GUIDE else None,
-        extra_kind=extra_kind if doc_type == DocType.SPEC_EXTRA else None,
         product=product,
         product_detail=product_detail,
         description=(description or "").strip() or None,
@@ -105,9 +102,8 @@ def create_document(
 @router.get("/documents", response_model=list[DocumentOut])
 def list_documents(
     vendor_id: int | None = None,
-    doc_type: Literal["spec", "guide", "quote", "brochure", "spec_extra"] | None = None,
+    doc_type: Literal["spec", "guide", "quote", "price_list", "purchase", "brochure"] | None = None,
     guide_kind: Literal["technical", "troubleshooting"] | None = None,
-    extra_kind: Literal["price_list", "purchase"] | None = None,
     partner_id: int | None = None,
     uploaded_by: int | None = None,
     product: str | None = None,
@@ -154,8 +150,6 @@ def list_documents(
         query = query.where(SourceDocument.partner_id == partner_id)
     if uploaded_by is not None:
         query = query.where(SourceDocument.uploaded_by == uploaded_by)
-    if extra_kind is not None:
-        query = query.where(SourceDocument.extra_kind == extra_kind)
     if guide_kind == GuideKind.TECHNICAL:
         query = query.where(or_(SourceDocument.guide_kind == GuideKind.TECHNICAL, SourceDocument.guide_kind.is_(None)))
     elif guide_kind is not None:
@@ -197,7 +191,6 @@ def _document_out(doc: SourceDocument, access: str = "own") -> DocumentOut:
         title=doc.title,
         doc_type=doc.doc_type or DocType.GUIDE,
         guide_kind=(doc.guide_kind or GuideKind.TECHNICAL) if (doc.doc_type or DocType.GUIDE) == DocType.GUIDE else None,
-        extra_kind=doc.extra_kind,
         product=doc.product,
         product_detail=doc.product_detail,
         description=doc.description,
@@ -230,17 +223,24 @@ def _section_out(s: Section) -> SectionOut:
     )
 
 
-DOC_TYPE_LABELS = {"spec": "규격서", "guide": "가이드", "quote": "견적서", "brochure": "브로슈어", "spec_extra": "규격서 기타 문서"}
+DOC_TYPE_LABELS = {
+    "spec": "규격서",
+    "guide": "가이드",
+    "quote": "견적서",
+    "price_list": "제품 가격표",
+    "purchase": "매입 금액",
+    "brochure": "브로슈어",
+}
 
-# 종류별로 올릴 수 있는 파일 형식. 규격서는 Excel 도, 기타 문서(제품 가격표·매입 금액)는 PDF·Word·Excel 만.
+# 종류별로 올릴 수 있는 파일 형식. 규격서는 Excel 도, 제품 가격표·매입 금액은 PDF·Word·Excel 만(웹 주소 불가).
 EXTENSION_LABELS = {".pdf": "PDF", ".docx": "Word(.docx)", ".pptx": "PowerPoint(.pptx)", ".xlsx": "Excel(.xlsx)"}
 DEFAULT_EXTENSIONS = (".pdf", ".docx", ".pptx")
-ALLOWED_EXTENSIONS = {"spec": (".pdf", ".docx", ".xlsx", ".pptx"), "spec_extra": (".pdf", ".docx", ".xlsx")}
-
-
-def permission_for(doc_type: str) -> str:
-    """규격서 기타 문서는 규격서 권한으로 올리고 지운다."""
-    return "spec" if doc_type == DocType.SPEC_EXTRA else doc_type
+ALLOWED_EXTENSIONS = {
+    "spec": (".pdf", ".docx", ".xlsx", ".pptx"),
+    "price_list": (".pdf", ".docx", ".xlsx"),
+    "purchase": (".pdf", ".docx", ".xlsx"),
+}
+FILE_ONLY_TYPES = {"price_list", "purchase"}
 DownloadFormat = Literal["original", "docx", "pptx", "xlsx", "pdf"]
 _UNSAFE_NAME = re.compile(r'[\\/:*?"<>|]')  # 파일 이름에 쓸 수 없는 문자
 
@@ -279,7 +279,7 @@ def delete_document(document_id: int, user: User = Depends(get_active_user), db:
     if not can_trash(user, doc):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "같은 조직의 문서만 삭제할 수 있습니다.")
     # 등록 권한이 없는 종류(등록된 ○○)는 내려받기만 한다
-    require_permission(db, user, permission_for(doc.doc_type or DocType.GUIDE))
+    require_permission(db, user, doc.doc_type or DocType.GUIDE)
     doc.deleted_at, doc.deleted_by = utcnow(), user.id
     db.commit()
 

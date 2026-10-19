@@ -3,7 +3,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, download } from "../api";
 import { useAuth } from "../auth";
-import { DOC_TYPES, docTypeLabel, EXTRA_KINDS, GUIDE_KINDS, STATUS_LABELS, type DocTypeKey, type ExtraKindKey, type GuideKindKey } from "../labels";
+import { DOC_TYPES, docTypeLabel, GUIDE_KINDS, STATUS_LABELS, type DocTypeKey, type GuideKindKey } from "../labels";
 import ProductSelect, { productLabel } from "../ProductSelect";
 import type { DocumentSummary } from "../types";
 
@@ -24,7 +24,7 @@ export default function DocumentsPage() {
       <div className="page-header">
         <h1>문서 등록</h1>
         <p className="muted">
-          벤더의 규격서·기술 가이드·견적서·브로슈어를 등록합니다. 기술 가이드는 목차를 분석한 뒤 요약할 수 있습니다. 올린 문서는{" "}
+          벤더의 규격서·기술 가이드·견적서·제품 가격표·매입 금액·브로슈어를 등록합니다. 기술 가이드는 목차를 분석한 뒤 요약할 수 있습니다. 올린 문서는{" "}
           <Link to="/documents/registered">등록한 문서</Link>에서 봅니다.
         </p>
       </div>
@@ -64,13 +64,13 @@ export function RegisteredDocumentsPage() {
       <div className="page-header">
         <h1>등록한 문서</h1>
         <p className="muted">
-          내가 문서 등록에서 올린 문서를 종류별로 봅니다. 다른 사람이 올린 문서는 상단의 규격서·가이드·견적서·브로슈어 메뉴에서 확인하세요.
+          내가 문서 등록에서 올린 문서를 종류별로 봅니다(규격서·가이드·견적서·제품 가격표·매입 금액·브로슈어). 다른 사람이 올린 문서는 상단의 규격서·가이드·견적서·브로슈어 메뉴에서 확인하세요.
           새 문서는 <Link to="/documents">문서 등록</Link>에서 올리세요.
         </p>
       </div>
 
       <div className="filters">
-        {DOC_TYPES.map((t) => (
+        {DOC_TYPES.filter((t) => !SALES_ONLY_TYPES.includes(t.key) || isAdmin || me?.permissions.includes(t.key)).map((t) => (
           <button key={t.key} className={t.key === docType ? "active" : ""} onClick={() => go({ type: t.key })}>
             {t.label}
           </button>
@@ -163,7 +163,7 @@ export function DocumentTable({
                 {d.access === "shared" && <span className="badge granted" style={{ marginLeft: 6 }} title="다른 조직이 공유한 문서 (읽기 전용)">공유받음</span>}
                 {d.access === "domain" && <span className="badge granted" style={{ marginLeft: 6 }} title="도메인 권한으로 열람 (읽기 전용)">도메인 열람</span>}
               </td>
-              {showDocType && <td style={{ whiteSpace: "nowrap" }}>{docTypeLabel(d.doc_type, d.extra_kind)}</td>}
+              {showDocType && <td style={{ whiteSpace: "nowrap" }}>{docTypeLabel(d.doc_type)}</td>}
               {showGuideKind && (
                 <td style={{ whiteSpace: "nowrap" }}>{GUIDE_KINDS.find((k) => k.key === d.guide_kind)?.label ?? "-"}</td>
               )}
@@ -287,26 +287,30 @@ function DownloadDialog({ doc, onClose }: { doc: DocumentSummary; onClose: () =>
 /** 파일 형식: 규격서는 Excel 도, 기타 문서(제품 가격표·매입 금액)는 PDF·Word·Excel 만 (웹 주소 불가). */
 const FILE_TYPES: Record<string, { accept: string; label: string }> = {
   spec: { accept: ".pdf,.docx,.xlsx,.pptx", label: "PDF, Word, Excel, PowerPoint" },
-  spec_extra: { accept: ".pdf,.docx,.xlsx", label: "PDF, Word, Excel" },
+  price_list: { accept: ".pdf,.docx,.xlsx", label: "PDF, Word, Excel" },
+  purchase: { accept: ".pdf,.docx,.xlsx", label: "PDF, Word, Excel" },
 };
 const DEFAULT_FILE_TYPE = { accept: ".pdf,.docx,.pptx", label: "PDF, Word, PowerPoint" };
 
-/** 문서 올리기 양식. extraKind 를 주면 규격서 기타 문서(제품 가격표·매입 금액) 전용으로 종류 선택을 숨긴다. */
-export function UploadForm({
-  defaultType, allowed, onUploaded, extraKind,
-}: { defaultType: DocTypeKey; allowed: DocTypeKey[]; onUploaded: (type: DocTypeKey) => void; extraKind?: ExtraKindKey }) {
+/** 제품 가격표·매입 금액: 영업만 등록·조회 (관리자는 전부). 파일(PDF·Word·Excel)로만 받는다. */
+const SALES_ONLY_TYPES: string[] = ["price_list", "purchase"];
+
+function UploadForm({
+  defaultType, allowed, onUploaded,
+}: { defaultType: DocTypeKey; allowed: DocTypeKey[]; onUploaded: (type: DocTypeKey) => void }) {
   const { me } = useAuth();
   const queryClient = useQueryClient();
   const vendors = me?.vendors ?? [];
   const [chosenType, setDocType] = useState<DocTypeKey>();
   const docType = chosenType ?? defaultType; // 고르기 전에는 지금 보고 있는 탭
-  const sendType = extraKind ? "spec_extra" : docType;
+  const sendType = docType;
   const fileType = FILE_TYPES[sendType] ?? DEFAULT_FILE_TYPE;
+  const fileOnly = SALES_ONLY_TYPES.includes(sendType);
   const [guideKind, setGuideKind] = useState<GuideKindKey>("technical");
   const [vendorId, setVendorId] = useState<number | "">("");
   const [product, setProduct] = useState({ product: "", detail: "" });
   const [chosenMode, setMode] = useState<"file" | "url">("file");
-  const mode = extraKind ? "file" : chosenMode;
+  const mode = fileOnly ? "file" : chosenMode;
   const [file, setFile] = useState<File | null>(null);
   const [url, setUrl] = useState("");
   const [title, setTitle] = useState("");
@@ -320,7 +324,6 @@ export function UploadForm({
       if (product.product) form.append("product", product.product);
       if (product.detail) form.append("product_detail", product.detail);
       form.append("doc_type", sendType);
-      if (extraKind) form.append("extra_kind", extraKind);
       if (sendType === "guide") form.append("guide_kind", guideKind);
       if (title) form.append("title", title);
       if (description.trim()) form.append("description", description.trim());
@@ -336,7 +339,7 @@ export function UploadForm({
       setInputKey((k) => k + 1);
       setDocType(undefined);
       queryClient.invalidateQueries({ queryKey: ["documents"] });
-      onUploaded(doc.doc_type === "spec_extra" ? "spec" : doc.doc_type);
+      onUploaded(doc.doc_type);
     },
   });
 
@@ -352,19 +355,12 @@ export function UploadForm({
       ) : (
         <form className="form" onSubmit={submit}>
           <div className="form-row">
-            {extraKind ? (
-              <label style={{ flex: "0 0 200px" }}>
-                기타 문서 종류
-                <input value={EXTRA_KINDS.find((k) => k.key === extraKind)!.label} readOnly />
-              </label>
-            ) : (
-              <label style={{ flex: "0 0 200px" }}>
-                등록할 탭 (문서 종류)
-                <select value={docType} onChange={(e) => setDocType(e.target.value as DocTypeKey)}>
-                  {DOC_TYPES.filter((t) => allowed.includes(t.key)).map((t) => <option key={t.key} value={t.key}>{t.full}</option>)}
-                </select>
-              </label>
-            )}
+            <label style={{ flex: "0 0 200px" }}>
+              등록할 탭 (문서 종류)
+              <select value={docType} onChange={(e) => setDocType(e.target.value as DocTypeKey)}>
+                {DOC_TYPES.filter((t) => allowed.includes(t.key)).map((t) => <option key={t.key} value={t.key}>{t.full}</option>)}
+              </select>
+            </label>
             {sendType === "guide" && (
               <label style={{ flex: "0 0 180px" }}>
                 가이드 종류
@@ -404,7 +400,7 @@ export function UploadForm({
           </label>
           <div className="actions">
             <label className="check"><input type="radio" checked={mode === "file"} onChange={() => setMode("file")} />파일 ({fileType.label})</label>
-            {!extraKind && <label className="check"><input type="radio" checked={mode === "url"} onChange={() => setMode("url")} />웹 문서 URL</label>}
+            {!fileOnly && <label className="check"><input type="radio" checked={mode === "url"} onChange={() => setMode("url")} />웹 문서 URL</label>}
           </div>
           {mode === "file" ? (
             <input key={`${inputKey}-${sendType}`} type="file" accept={fileType.accept} onChange={(e) => setFile(e.target.files?.[0] ?? null)} required />

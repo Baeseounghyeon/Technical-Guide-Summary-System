@@ -1,5 +1,5 @@
 """규격서·견적서 생성: 필수 입력 항목을 채워(재사용할 문서에서 가져와 고칠 수도 있음) PDF·Word 로 만든다.
-규격서는 '기타 문서 등록'에 올린 제품 가격표·매입 금액 문서를 하나씩 골라 첨부할 수 있다.
+규격서는 문서 등록에서 올린 제품 가격표·매입 금액 문서를 하나씩 골라 첨부할 수 있다.
 생성 기록은 버전별로 남아 '생성한 ○○'에서 이력을 본다. 생성한 가이드(요약 가이드) 목록도 여기서 준다."""
 
 import re
@@ -15,15 +15,16 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..deps import get_active_user, get_readable_document, is_admin, require_permission
 from ..form_fields import FORM_FIELDS, FORM_TITLES, fill_from_sections
-from ..models import DocStatus, DocType, GeneratedDocument, Guide, SourceDocument, User
+from ..models import DocStatus, GeneratedDocument, Guide, SourceDocument, User
 from ..schemas import UTCDateTime
-from ..services.exporters.form_export import MEDIA, FormDoc, build_form_file
+from ..services.exporters.form_export import FormDoc, build_form_file
+from ..services.exporters.quote_export import MEDIA
 
 router = APIRouter(prefix="/api", tags=["규격서·견적서 생성"])
 
 FormType = Literal["spec", "quote"]
 _UNSAFE_NAME = re.compile(r'[\\/:*?"<>|]')
-# 규격서 생성 때 가져오는 기타 문서 종류 (기타 문서 등록 화면의 두 탭)
+# 규격서 생성 때 첨부로 가져오는 문서 종류 (문서 등록의 제품 가격표·매입 금액)
 EXTRA_KINDS = {"price_list": "제품 가격표", "purchase": "매입 금액"}
 
 
@@ -47,7 +48,8 @@ class GeneratedOut(BaseModel):
     id: int
     doc_type: str
     title: str
-    fields: dict[str, str]
+    fields: dict  # 규격서: 항목 값 / 견적서: 양식·항목 표·작성자
+    formats: list[str] = ["pdf", "docx"]  # 받을 수 있는 형식
     version: int
     root_id: int
     based_on_id: int | None
@@ -77,6 +79,7 @@ def _out(db: Session, g: GeneratedDocument) -> GeneratedOut:
         doc_type=g.doc_type,
         title=g.title,
         fields=g.fields or {},
+        formats=_formats(g),
         version=g.version,
         root_id=g.root_id or g.id,
         based_on_id=g.based_on_id,
@@ -91,6 +94,14 @@ def _out(db: Session, g: GeneratedDocument) -> GeneratedOut:
         partner_name=g.partner.name if g.partner else None,
         created_at=g.created_at,
     )
+
+
+def _formats(g: GeneratedDocument) -> list[str]:
+    if g.doc_type == "quote":
+        from ..services.exporters.quote_export import formats_for
+
+        return formats_for((g.fields or {}).get("template_ext"))
+    return ["pdf", "docx"]
 
 
 def _clean(body: FormIn) -> dict[str, str]:
@@ -108,12 +119,12 @@ def _check_attachments(db: Session, user: User, body: FormIn) -> dict[str, int]:
     """첨부로 고른 문서가 그 종류의 기타 문서이고 볼 수 있는 문서인지 확인한다."""
     picked = {k: v for k, v in body.attachments.items() if v}
     if picked and body.doc_type != "spec":
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "기타 문서(제품 가격표·매입 금액)는 규격서에만 첨부합니다.")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "제품 가격표·매입 금액 첨부는 규격서에서만 합니다. 견적서는 견적서 생성 단계에서 고르세요.")
     for kind, doc_id in picked.items():
         if kind not in EXTRA_KINDS:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, f"알 수 없는 첨부 종류입니다: {kind}")
         doc = get_readable_document(db, user, doc_id)
-        if doc.doc_type != DocType.SPEC_EXTRA or doc.extra_kind != kind:
+        if doc.doc_type != kind:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, f"{EXTRA_KINDS[kind]}(으)로 등록한 문서를 고르세요.")
     return picked
 
@@ -171,6 +182,8 @@ def preview(body: FormIn, user: User = Depends(get_active_user), db: Session = D
 def create_generated(body: FormIn, user: User = Depends(get_active_user), db: Session = Depends(get_db)) -> GeneratedOut:
     """생성: 입력값을 저장한다. 이전 생성 문서를 고쳐 만들면 그 문서의 다음 버전이 된다."""
     require_permission(db, user, body.doc_type)
+    if body.doc_type == "quote":
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "견적서는 견적서 생성 단계(/api/quote-builder)로 만듭니다.")
     values = _clean(body)
     attachments = _check_attachments(db, user, body)
     if body.source_document_id is not None:
@@ -219,7 +232,7 @@ def get_generated(generated_id: int, user: User = Depends(get_active_user), db: 
 @router.get("/generated/{generated_id}/download")
 def download_generated(
     generated_id: int,
-    format: Literal["pdf", "docx"] = Query("pdf"),
+    format: Literal["pdf", "docx", "xlsx"] = Query("pdf"),
     user: User = Depends(get_active_user),
     db: Session = Depends(get_db),
 ) -> Response:
@@ -230,9 +243,30 @@ def download_generated(
         ("작성일", f"{g.created_at:%Y-%m-%d}"),
         ("버전", f"v{g.version}"),
     ]
-    data = build_form_file(_form(db, g.doc_type, g.title, g.fields or {}, meta, g.attachments), format)
+    if format not in _formats(g):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"이 문서는 {', '.join(_formats(g))} 형식으로 받을 수 있습니다.")
+    if g.doc_type == "quote":
+        data = _quote_file(db, user, g, format, meta)
+    else:
+        data = build_form_file(_form(db, g.doc_type, g.title, g.fields or {}, meta, g.attachments), format)
     name = f"{_UNSAFE_NAME.sub('_', g.title)[:100]}_v{g.version}.{format}"
     return Response(data, media_type=MEDIA[format], headers={"Content-Disposition": f"attachment; filename*=utf-8''{quote(name)}"})
+
+
+def _quote_file(db: Session, user: User, g: GeneratedDocument, fmt: str, meta: list) -> bytes:
+    """견적서 파일: 양식과 같은 형식이면 양식을 채우고, 아니면 기본 양식. 양식이 지워졌으면 기본 양식."""
+    from ..models import QuoteTemplate
+    from ..services.exporters.quote_export import build_quote
+    from ..services.storage import get_storage
+    from .quote_builder import quote_data
+
+    fields = g.fields or {}
+    data = quote_data(fields, version=f"v{g.version}", date=f"{g.created_at:%Y-%m-%d}", meta=meta)
+    template = db.get(QuoteTemplate, fields["template_id"]) if fields.get("template_id") else None
+    if template is None:
+        return build_quote(data, fmt, None, None)
+    with get_storage().local_path(template.file_path) as path:
+        return build_quote(data, fmt, path, template.file_ext)
 
 
 # ---------- 생성한 가이드 (요약 가이드) ----------

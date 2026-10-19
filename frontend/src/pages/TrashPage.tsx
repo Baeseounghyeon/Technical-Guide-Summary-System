@@ -7,7 +7,6 @@ interface TrashItem {
   id: number;
   title: string | null;
   doc_type: string;
-  extra_kind?: string | null;
   vendor_name: string;
   product: string | null;
   product_detail: string | null;
@@ -63,7 +62,7 @@ export default function TrashPage() {
                 {items.data.map((d) => (
                   <tr key={d.id}>
                     <td>{d.title ?? `문서 ${d.id}`}</td>
-                    <td>{docTypeLabel(d.doc_type, d.extra_kind)}</td>
+                    <td>{docTypeLabel(d.doc_type)}</td>
                     <td>{d.vendor_name}</td>
                     <td>{productLabel(d.product, d.product_detail)}</td>
                     <td>{d.uploaded_by_name ?? "-"}</td>

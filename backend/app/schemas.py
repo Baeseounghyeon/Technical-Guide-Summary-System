@@ -162,7 +162,6 @@ class DocumentOut(ORM):
     title: str | None
     doc_type: str
     guide_kind: str | None  # 기술 가이드 문서만: technical | troubleshooting
-    extra_kind: str | None = None  # 규격서 기타 문서만: price_list | purchase
     product: str | None = None
     product_detail: str | None = None
     description: str | None

@@ -206,7 +206,7 @@ def test_track_permissions_and_admin_user_edit(client, tmp_path: Path):
             return client.post("/api/documents", data={"vendor_id": vendor["id"], "doc_type": doc_type, "title": f"{doc_type} 문서"}, files={"file": ("v.docx", f)}, headers=who)
 
     assert sorted(client.get("/api/auth/me", headers=engineer).json()["permissions"]) == ["brochure", "guide"]
-    assert sorted(client.get("/api/auth/me", headers=sales).json()["permissions"]) == ["brochure", "quote", "spec"]
+    assert sorted(client.get("/api/auth/me", headers=sales).json()["permissions"]) == ["brochure", "price_list", "purchase", "quote", "spec"]
     assert upload(engineer, "spec").status_code == 403 and upload(sales, "guide").status_code == 403
     assert upload(sales, "brochure").status_code == 201
     guide_doc = upload(engineer, "guide").json()

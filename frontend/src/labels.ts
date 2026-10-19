@@ -91,20 +91,21 @@ export const DOC_TYPES = [
   { key: "spec", label: "규격서", full: "규격서" },
   { key: "guide", label: "가이드", full: "가이드" },
   { key: "quote", label: "견적서", full: "견적서" },
+  { key: "price_list", label: "제품 가격표", full: "제품 가격표" },
+  { key: "purchase", label: "매입 금액", full: "매입 금액" },
   { key: "brochure", label: "브로슈어", full: "브로슈어" },
 ] as const;
 export type DocTypeKey = (typeof DOC_TYPES)[number]["key"];
 
-/** 규격서 기타 문서(제품 가격표·매입 금액). 규격서 생성 때 첨부로 가져온다. */
+/** 제품 가격표·매입 금액 (문서 등록의 종류, 영업만). 견적서 생성에서 항목을 뽑고, 규격서 생성에 첨부한다. */
 export const EXTRA_KINDS = [
   { key: "price_list", label: "제품 가격표" },
   { key: "purchase", label: "매입 금액" },
 ] as const;
 export type ExtraKindKey = (typeof EXTRA_KINDS)[number]["key"];
 
-/** 문서 목적 표시 이름 (기타 문서 포함). */
-export function docTypeLabel(docType: string, extraKind?: string | null): string {
-  if (docType === "spec_extra") return `규격서 기타 문서(${EXTRA_KINDS.find((k) => k.key === extraKind)?.label ?? "-"})`;
+/** 문서 목적 표시 이름. */
+export function docTypeLabel(docType: string): string {
   return DOC_TYPES.find((t) => t.key === docType)?.label ?? "-";
 }
 

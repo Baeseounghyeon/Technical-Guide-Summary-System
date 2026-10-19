@@ -28,6 +28,8 @@ const SCOPES = [
   { key: "guide", label: "가이드 등록·요약", detail: "가이드 문서 등록, 요약 요청·검토, 최종 문서(Word·PPT) 생성, 가이드 공유" },
   { key: "spec", label: "규격서 등록", detail: "규격서 문서 등록·수정" },
   { key: "quote", label: "견적서 등록·생성", detail: "견적서 참고 자료·양식 등록, 견적서 생성" },
+  { key: "price_list", label: "제품 가격표 등록", detail: "제품 가격표 문서 등록 (견적서 생성의 가격표 항목)" },
+  { key: "purchase", label: "매입 금액 등록", detail: "매입 금액 문서 등록 (견적서 생성의 매입 항목)" },
 ];
 const STATUS_LABELS: Record<string, string> = { pending: "승인 대기", approved: "승인", rejected: "반려", revoked: "회수" };
 const STATUS_BADGE: Record<string, string> = { pending: "pending", approved: "done", rejected: "failed", revoked: "failed" };

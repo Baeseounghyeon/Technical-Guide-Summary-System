@@ -6,7 +6,6 @@ import { useAuth } from "../auth";
 import { EXTRA_KINDS, languageLabel, STATUS_LABELS, type ExtraKindKey } from "../labels";
 import { productLabel } from "../ProductSelect";
 import type { DocumentSummary } from "../types";
-import { DocumentTable, UploadForm } from "./DocumentsPage";
 
 export type FormType = "spec" | "quote";
 const KIND: Record<FormType, { label: string; base: string }> = {
@@ -19,6 +18,7 @@ interface Generated {
   doc_type: FormType;
   title: string;
   fields: Record<string, string>;
+  formats: string[];
   version: number;
   root_id: number;
   based_on_id: number | null;
@@ -30,6 +30,7 @@ interface Generated {
   created_at: string;
 }
 type Format = "pdf" | "docx";
+export const FORMAT_LABELS: Record<string, string> = { pdf: "PDF", docx: "Word", xlsx: "Excel" };
 const FORMATS: { key: Format; label: string }[] = [
   { key: "pdf", label: "PDF" },
   { key: "docx", label: "Word" },
@@ -155,9 +156,9 @@ export function FormCreatePage({ docType }: { docType: FormType }) {
 
       {docType === "spec" && (
         <section className="card">
-          <h2 className="section-title">기타 문서 가져오기</h2>
+          <h2 className="section-title">제품 가격표·매입 금액 첨부</h2>
           <p className="muted">
-            <Link to="/specs/extra">기타 문서 등록</Link>에 올린 제품 가격표·매입 금액 문서를 하나씩 골라 규격서에 첨부합니다(선택).
+            문서 등록에서 올린 제품 가격표·매입 금액 문서를 하나씩 골라 규격서에 첨부합니다(선택).
           </p>
           <div className="filters">
             {EXTRA_KINDS.map((k) => (
@@ -297,11 +298,11 @@ function GeneratedPicker({ docType, checked, onPick }: { docType: FormType; chec
 /** 기타 문서(제품 가격표·매입 금액) 하나를 고른다. */
 function ExtraPicker({ kind, checked, onPick }: { kind: ExtraKindKey; checked: number | null; onPick: (d: DocumentSummary) => void }) {
   const label = EXTRA_KINDS.find((k) => k.key === kind)!.label;
-  const query = `doc_type=spec_extra&extra_kind=${kind}`;
+  const query = `doc_type=${kind}`;
   const docs = useQuery({ queryKey: ["documents", query], queryFn: () => api<DocumentSummary[]>(`/documents?${query}`) });
   if (docs.isLoading) return <p className="muted">불러오는 중…</p>;
   if (docs.error) return <p className="error">{docs.error.message}</p>;
-  if (!docs.data?.length) return <p className="muted">등록한 {label}가 없습니다. <Link to={`/specs/extra?kind=${kind}`}>기타 문서 등록</Link>에서 올리세요.</p>;
+  if (!docs.data?.length) return <p className="muted">등록한 {label}가 없습니다. <Link to={`/documents?type=${kind}`}>문서 등록</Link>에서 올리세요.</p>;
   return (
     <div className="table-wrap">
       <table style={{ minWidth: 700 }}>
@@ -321,33 +322,6 @@ function ExtraPicker({ kind, checked, onPick }: { kind: ExtraKindKey; checked: n
         </tbody>
       </table>
     </div>
-  );
-}
-
-/** 규격서 > 기타 문서 등록: 제품 가격표 · 매입 금액 탭. PDF·Word·Excel 만 올리며, 규격서 생성에서 첨부로 가져온다. */
-export function ExtraDocsPage() {
-  const [params, setParams] = useSearchParams();
-  const kind = (EXTRA_KINDS.some((k) => k.key === params.get("kind")) ? params.get("kind") : "price_list") as ExtraKindKey;
-  const label = EXTRA_KINDS.find((k) => k.key === kind)!.label;
-  return (
-    <>
-      <div className="page-header">
-        <h1>기타 문서 등록</h1>
-        <p className="muted">
-          규격서는 여러 문서를 함께 보고 만듭니다. 제품 가격표와 매입 금액 문서(PDF, Word, Excel)를 올려 두면 <Link to="/specs/create">규격서 생성</Link>에서 가져올 수 있습니다.
-        </p>
-      </div>
-      <div className="filters">
-        {EXTRA_KINDS.map((k) => (
-          <button key={k.key} className={kind === k.key ? "active" : ""} onClick={() => setParams({ kind: k.key })}>{k.label}</button>
-        ))}
-      </div>
-      <UploadForm key={kind} defaultType="spec" allowed={["spec"]} extraKind={kind} onUploaded={() => undefined} />
-      <section className="card">
-        <h2 className="section-title">등록한 {label}</h2>
-        <DocumentTable query={`doc_type=spec_extra&extra_kind=${kind}`} showStatus={false} />
-      </section>
-    </>
   );
 }
 
@@ -401,8 +375,8 @@ export function GeneratedListPage({ docType }: { docType: FormType }) {
     );
   const downloads = (g: Generated) => (
     <div className="actions">
-      {FORMATS.map((f) => (
-        <button key={f.key} className="link" onClick={() => download(`/generated/${g.id}/download?format=${f.key}`)}>{f.label}</button>
+      {g.formats.map((f) => (
+        <button key={f} className="link" onClick={() => download(`/generated/${g.id}/download?format=${f}`)}>{FORMAT_LABELS[f] ?? f}</button>
       ))}
     </div>
   );
@@ -423,7 +397,7 @@ export function GeneratedListPage({ docType }: { docType: FormType }) {
           <div className="table-wrap">
             <table style={{ minWidth: 900 }}>
               <thead>
-                <tr><th>문서 제목</th><th>최신 버전</th><th>재사용 원본</th>{docType === "spec" && <th>첨부 (가격표·매입)</th>}<th>작성자</th><th>최종 생성 일시</th><th>다운로드</th><th>관리</th></tr>
+                <tr><th>문서 제목</th><th>최신 버전</th><th>재사용 원본</th><th>{docType === "spec" ? "첨부 (가격표·매입)" : "가격표·매입 금액"}</th><th>작성자</th><th>최종 생성 일시</th><th>다운로드</th><th>관리</th></tr>
               </thead>
               <tbody>
                 {[...groups.entries()].map(([root, versions]) => {
@@ -434,7 +408,7 @@ export function GeneratedListPage({ docType }: { docType: FormType }) {
                         <td><strong>{latest.title}</strong></td>
                         <td>v{latest.version}</td>
                         <td>{latest.source_document_title ?? "-"}</td>
-                        {docType === "spec" && <td>{attachmentCell(latest)}</td>}
+                        <td>{attachmentCell(latest)}</td>
                         <td>{latest.created_by_name}</td>
                         <td style={{ whiteSpace: "nowrap" }}>{new Date(latest.created_at).toLocaleString()}</td>
                         <td>{downloads(latest)}</td>
@@ -451,7 +425,7 @@ export function GeneratedListPage({ docType }: { docType: FormType }) {
                             <td className="muted">└ v{g.version} {g.title !== latest.title ? `· ${g.title}` : ""}</td>
                             <td>v{g.version}</td>
                             <td>{g.source_document_title ?? "-"}</td>
-                            {docType === "spec" && <td>{attachmentCell(g)}</td>}
+                            <td>{attachmentCell(g)}</td>
                             <td>{g.created_by_name}</td>
                             <td style={{ whiteSpace: "nowrap" }}>{new Date(g.created_at).toLocaleString()}</td>
                             <td>{downloads(g)}</td>

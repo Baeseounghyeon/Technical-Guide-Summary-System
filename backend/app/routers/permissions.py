@@ -17,7 +17,7 @@ from ..schemas import UTCDateTime
 
 router = APIRouter(prefix="/api", tags=["권한 승인 요청"])
 
-Scope = Literal["guide", "spec", "quote"]
+Scope = Literal["guide", "spec", "quote", "price_list", "purchase", "brochure"]
 
 
 class PermissionRequestIn(BaseModel):

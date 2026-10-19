@@ -86,9 +86,17 @@ def accessible_vendors(db: Session, user: User) -> list[Vendor]:
 # ---------- 업무 구분별 권한 ----------
 # guide: 가이드 등록·요약·검토·최종 문서 / spec: 규격서 등록 / quote: 견적서 자료·양식 등록·생성 / brochure: 브로슈어 등록
 # 내려받기·보기는 권한과 관계없이 열람 범위 안이면 된다.
-ALL_PERMISSIONS = ("guide", "spec", "quote", "brochure")
-TRACK_PERMISSIONS = {"engineer": {"guide", "brochure"}, "sales": {"spec", "quote", "brochure"}}
-PERMISSION_LABELS = {"guide": "가이드 등록·요약", "spec": "규격서 등록", "quote": "견적서 등록·생성", "brochure": "브로슈어 등록"}
+ALL_PERMISSIONS = ("guide", "spec", "quote", "price_list", "purchase", "brochure")
+# 엔지니어·영업 롤 구분: 제품 가격표·매입 금액은 영업만 (관리자는 전부)
+TRACK_PERMISSIONS = {"engineer": {"guide", "brochure"}, "sales": {"spec", "quote", "price_list", "purchase", "brochure"}}
+PERMISSION_LABELS = {
+    "guide": "가이드 등록·요약",
+    "spec": "규격서 등록",
+    "quote": "견적서 등록·생성",
+    "price_list": "제품 가격표 등록",
+    "purchase": "매입 금액 등록",
+    "brochure": "브로슈어 등록",
+}
 
 
 def user_permissions(db: Session, user: User) -> set[str]:

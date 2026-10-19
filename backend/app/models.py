@@ -183,7 +183,8 @@ class DocType(StrEnum):
     GUIDE = "guide"  # 벤더 기술 가이드
     BROCHURE = "brochure"  # 벤더 브로슈어
     QUOTE = "quote"  # 견적서
-    SPEC_EXTRA = "spec_extra"  # 규격서 기타 문서 (제품 가격표·매입 금액). 규격서 생성 때 첨부로 가져온다
+    PRICE_LIST = "price_list"  # 제품 가격표 (영업). 견적서 생성 때 항목을 뽑아 쓴다
+    PURCHASE = "purchase"  # 매입 금액 (영업). 견적서 생성 때 항목을 뽑아 쓴다
 
 
 class GuideKind(StrEnum):
@@ -204,7 +205,7 @@ class SourceDocument(Base):
     doc_type: Mapped[str | None] = mapped_column(String(20), default=DocType.GUIDE)  # spec | guide | brochure
     description: Mapped[str | None] = mapped_column(Text)
     guide_kind: Mapped[str | None] = mapped_column(String(20))  # doc_type=guide 일 때: technical | troubleshooting
-    extra_kind: Mapped[str | None] = mapped_column(String(20))  # doc_type=spec_extra 일 때: price_list(제품 가격표) | purchase(매입 금액)
+    extra_kind: Mapped[str | None] = mapped_column(String(20))  # (사용 안 함) 예전 규격서 기타 문서 종류
     product: Mapped[str | None] = mapped_column(String(100))  # 제품군 (catalog.PRODUCT_CATALOG)
     product_detail: Mapped[str | None] = mapped_column(String(100))  # 제품군의 상세
     # 휴지통: 삭제하면 표시만 하고(같은 조직이 복구 가능), 목록에서 뺀다
@@ -721,6 +722,26 @@ class DocumentUserShare(Base):
     partner: Mapped[Partner] = relationship()
     user: Mapped[User] = relationship(foreign_keys=[user_id])
     sharer: Mapped[User | None] = relationship(foreign_keys=[shared_by])
+
+
+class QuoteTemplate(Base):
+    """견적서 양식 (Word·Excel). 견적서 생성 > 가져오기 > 견적서 양식에서 조직별로 등록·변경하고,
+    견적서는 고른 양식의 {{자리 표시}}를 채워 만든다."""
+
+    __tablename__ = "quote_templates"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    partner_id: Mapped[int | None] = mapped_column(ForeignKey("partners.id"), index=True)
+    name: Mapped[str] = mapped_column(String(200))
+    file_path: Mapped[str] = mapped_column(String(500))
+    file_name: Mapped[str] = mapped_column(String(300))
+    file_ext: Mapped[str] = mapped_column(String(10))  # docx | xlsx
+    uploaded_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    uploader: Mapped[User] = relationship()
+    partner: Mapped[Partner | None] = relationship()
 
 
 class GeneratedDocument(Base):
