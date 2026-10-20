@@ -910,7 +910,7 @@ function FinalStep(props: {
         </label>
         {s.mode === "target" ? (
           <label>
-            <span className="field-label">목표 공급가 합계 (원, 부가세 별도)</span>
+            <span className="field-label" title="U14 에 들어가고 P9 = U14, 할인율 P10 = 1 - P9 / 금액 합계">목표 공급가 합계 (U14 → P9)</span>
             <NumberInput value={s.target_total} onChange={(v) => props.setSettings({ ...s, target_total: v })} placeholder="예: 163,800,000" />
           </label>
         ) : (
@@ -924,16 +924,12 @@ function FinalStep(props: {
           <NumberInput value={s.current_rate} onChange={(v) => props.setSettings({ ...s, current_rate: v })} placeholder="예: 1,400" />
         </label>
         <label>
-          <span className="field-label">참고 금액 1 (U14)</span>
-          <NumberInput value={s.ref_amount_1} onChange={(v) => props.setSettings({ ...s, ref_amount_1: v })} placeholder="T13 = 4,000,000 ÷ U14" />
-        </label>
-        <label>
-          <span className="field-label">참고 금액 2 (U15)</span>
+          <span className="field-label">참고 금액 (U15)</span>
           <NumberInput value={s.ref_amount_2} onChange={(v) => props.setSettings({ ...s, ref_amount_2: v })} />
         </label>
       </div>
       <p className="muted" style={{ margin: "0 0 14px" }}>
-        당시 환율·참고 금액은 견적서 인쇄 영역 밖 계산 메모 칸에 들어갑니다(비우면 빈칸). 수식(Q7·R7·T13·R15 등)은 양식 그대로 둡니다.
+        목표 공급가 합계는 U14 에 들어가고 P9 = U14, 할인율 P10 = 1 - P9 / (G18 + G19 + …) 로 계산됩니다. 당시 환율·참고 금액은 인쇄 영역 밖 계산 메모 칸에 들어갑니다(비우면 빈칸). 수식(Q7·R7·T13·R15 등)은 양식 그대로 둡니다.
       </p>
       {block(1, "견적서 양식", <p>{template ? `${template.name} (${template.file_name})` : "기본 양식 (유니포인트 견적서)"}</p>)}
       {block(2, "제품 가격표 (참고)", <p>{props.priceDoc?.title ?? (props.priceDoc ? "(제목 없음)" : "사용 안 함")}</p>)}

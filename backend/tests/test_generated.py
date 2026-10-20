@@ -294,10 +294,10 @@ def test_quote_builder_steps(client, tmp_path: Path):
     assert plain.font.b is False and period.font.b is True and period.font.color.rgb == "FFFF0000"
     assert period.text.endswith("1year MA") and "Serial Num." in plain.text
     assert ws["N18"].value == 14675.68 and ws["O18"].value == 1360 and ws["G18"].value == "=N18*O18*2.3"
-    assert ws["H19"].value == "=G19*(1-I19)" and ws["S19"].value == "=R19/H19" and ws["P9"].value == 20000000
+    assert ws["H19"].value == "=G19*(1-I19)" and ws["S19"].value == "=R19/H19" and ws["P9"].value == "=U14" and ws["U14"].value == 20000000
     # 양식의 품목 표(18~21행) 안에 채운다: 2건이면 20·21행은 빈 채로, 합계 위치는 그대로
     assert ws["B20"].value is None and ws["B21"].value is None and ws["D22"].value == "- 이하여백 -"
-    assert ws["H23"].value == "=SUM(H18:H22)" and ws["H24"].value == "=H23*1.1" and ws["P10"].value == "=1-P9/SUM(G18:G19)"
+    assert ws["H23"].value == "=SUM(H18:H22)" and ws["H24"].value == "=H23*1.1" and ws["P10"].value == "=1-P9/(G18+G19)"
     assert "NUMBERSTRING(H24,1)" in ws["B16"].value and ws.print_area.endswith("$J$32")
     assert client.get(f"/api/generated/{q['id']}/download?format=pdf", headers=sales).content.startswith(b"%PDF")
     assert client.get(f"/api/generated/{q['id']}/download?format=docx", headers=sales).status_code == 400

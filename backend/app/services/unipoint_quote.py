@@ -456,16 +456,21 @@ def build_xlsx(q: QuoteDoc, template: Path | None = None) -> tuple[bytes, dict[s
     ws[L.project] = f"프로젝트명 : {q.project}"
     ws[L.date] = datetime.strptime(q.date, "%Y-%m-%d")
     last = L.first + max(len(q.lines), 1) - 1
-    # 할인율 역산 (원래 견적서 O8~P10): 수식은 늘 두고, 목표 금액(P9)은 입력했을 때만
-    ws[L.target] = s.target_total or None
-    ws[L.discount] = f"=1-{L.target}/SUM({c['amount']}{L.first}:{c['amount']}{last})"
+    # 할인율 역산 (원래 견적서 O8~P10): 목표 금액은 U14 에 넣고 P9 는 =U14, P10 은 원래 견적서와 같은 덧셈 꼴
+    #   P10 = 1 - P9 / (G18 + G19 + … + G마지막)
+    target_cell = "U14"
+    target = s.target_total or s.ref_amount_1
+    ws[target_cell] = target or None
+    ws[L.target] = f"={target_cell}"
+    amounts = "+".join(f"{c['amount']}{r}" for r in range(L.first, last + 1))
+    ws[L.discount] = f"=1-{L.target}/({amounts})"
+    calc[L.target] = target or 0
     calc[L.discount] = q.totals["discount"] if s.target_total else 1.0
-    # 직접 입력하는 계산 메모 (인쇄 영역 밖): 당시 환율(P12), 참고 금액(U14·U15)
+    # 직접 입력하는 계산 메모 (인쇄 영역 밖): 당시 환율(P12), 참고 금액(U15)
     rate_label = _find(ws, lambda v: v.replace(" ", "") == "당시환율")
     if rate_label is not None:
         ws.cell(row=rate_label.row, column=rate_label.column + 1, value=s.current_rate)
-    for ref, value in (("U14", s.ref_amount_1), ("U15", s.ref_amount_2)):
-        ws[ref] = value
+    ws["U15"] = s.ref_amount_2
     for r in range(L.first, L.blank):  # 표 안의 이전 값을 비운 뒤 채운다
         for key in c:
             ws[f"{c[key]}{r}"] = None
