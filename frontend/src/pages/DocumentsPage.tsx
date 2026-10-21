@@ -54,7 +54,7 @@ export function RegisteredDocumentsPage() {
     const who = next.type ? "" : next.author === undefined ? author : next.author;
     setParams({ type, ...(vendor ? { vendor: String(vendor) } : {}), ...(who ? { author: String(who) } : {}) });
   };
-  // 등록한 문서는 본인이 올린 것만 (다른 사람 문서는 규격서·가이드·브로슈어 메뉴에서). 관리자는 전체.
+  // 등록한 문서는 본인이 올린 것만 (다른 사람 문서는 자료·가이드·견적서 메뉴에서). 관리자는 전체.
   const isAdmin = me?.role === "platform_admin";
   const who = isAdmin ? author : me?.id ?? 0;
   const query = [`doc_type=${docType}`, listVendor && `vendor_id=${listVendor}`, who && `uploaded_by=${who}`].filter(Boolean).join("&");
@@ -64,7 +64,7 @@ export function RegisteredDocumentsPage() {
       <div className="page-header">
         <h1>등록한 문서</h1>
         <p className="muted">
-          내가 문서 등록에서 올린 문서를 종류별로 봅니다(규격서·가이드·견적서·제품 가격표·매입 금액·브로슈어). 다른 사람이 올린 문서는 상단의 규격서·가이드·견적서·브로슈어 메뉴에서 확인하세요.
+          내가 문서 등록에서 올린 문서를 종류별로 봅니다(규격서·가이드·견적서·제품 가격표·매입 금액·브로슈어). 다른 사람이 올린 문서는 상단의 자료(규격서·브로슈어)·가이드·견적서 메뉴에서 확인하세요.
           새 문서는 <Link to="/documents">문서 등록</Link>에서 올리세요.
         </p>
       </div>

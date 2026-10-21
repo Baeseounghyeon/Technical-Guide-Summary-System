@@ -97,10 +97,9 @@ function Protected({ children, roles, sales, perm }: { children: ReactNode; role
           <NavLink to="/" end>홈</NavLink>
           <DocsMenu />
           {/* 등록 권한이 있으면 '등록한 ○○', 없으면 같은 조직이 올린 것을 내려받기만 하는 '등록된 ○○' */}
-          <TypeMenu base="/specs" label="규격서" canEdit={can("spec")} />
+          <MaterialsMenu canEditSpec={can("spec")} canEditBrochure={can("brochure")} />
           <GuidesMenu canEdit={can("guide")} />
           <TypeMenu base="/quotes" label="견적서" canEdit={can("quote")} create />
-          <TypeMenu base="/brochures" label="브로슈어" canEdit={can("brochure")} />
           <NavLink to="/community">커뮤니티</NavLink>
           <RequestsMenu isAdmin={isAdmin} />
           {SETTINGS_ROLES.includes(me.role) && (!isSales || isAdmin) && <NavLink to="/settings">설정</NavLink>}
@@ -130,7 +129,20 @@ function DocsMenu() {
   return <HoverMenu to="/documents" label="문서" items={items} />;
 }
 
-/** 상단 '규격서'·'견적서'·'브로슈어' 메뉴: 누르면 등록한(권한 없으면 등록된) ○○, 마우스를 올리면 그것과 조직 요청 ○○.
+/** 상단 '자료' 메뉴: 규격서·브로슈어는 목록만 있어 한 메뉴로 묶는다. 누르면 규격서 목록.
+ *  권한이 있으면 '등록한 ○○', 없으면 같은 조직 것을 내려받기만 하는 '등록된 ○○'. */
+function MaterialsMenu({ canEditSpec, canEditBrochure }: { canEditSpec: boolean; canEditBrochure: boolean }) {
+  const { pathname } = useLocation();
+  const items = [
+    { key: "spec", label: `${canEditSpec ? "등록한" : "등록된"} 규격서`, to: "/specs", active: pathname === "/specs" },
+    { key: "spec-org", label: "조직 요청 규격서", to: "/specs/org", active: pathname === "/specs/org" },
+    { key: "brochure", label: `${canEditBrochure ? "등록한" : "등록된"} 브로슈어`, to: "/brochures", active: pathname === "/brochures" },
+    { key: "brochure-org", label: "조직 요청 브로슈어", to: "/brochures/org", active: pathname === "/brochures/org" },
+  ];
+  return <HoverMenu to="/specs" label="자료" items={items} alsoActive={pathname.startsWith("/brochures")} />;
+}
+
+/** 상단 '견적서' 메뉴: 누르면 등록한(권한 없으면 등록된) 견적서, 마우스를 올리면 그것과 조직 요청 견적서.
  *  생성·생성한 ○○ 은 그 종류의 등록 권한이 있을 때만 보인다. */
 function TypeMenu({ base, label, canEdit, create = false }: { base: string; label: string; canEdit: boolean; create?: boolean }) {
   const { pathname } = useLocation();
