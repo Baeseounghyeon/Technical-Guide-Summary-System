@@ -34,7 +34,7 @@ export const STATUS_LABELS: Record<string, string> = { pending: "승인 대기",
 export const STATUS_BADGE: Record<string, string> = { pending: "pending", approved: "done", rejected: "failed", revoked: "failed" };
 
 /** 기능 권한 신청 양식: 내 업무 구분 밖의 권한(예: 영업이 가이드 등록·요약)을 관리자에게 신청한다. */
-export function PermissionRequestForm() {
+export function PermissionRequestForm({ preview = false }: { preview?: boolean }) {
   const { me } = useAuth();
   const queryClient = useQueryClient();
   const mine = useQuery({ queryKey: ["permission-requests", "mine"], queryFn: () => api<PermissionRequest[]>("/permission-requests/mine") });
@@ -108,7 +108,7 @@ export function PermissionRequestForm() {
           {pending && <p className="muted">승인 대기 중인 요청이 있어 처리된 뒤에 다시 신청할 수 있습니다.</p>}
           {send.error && <p className="error">{send.error.message}</p>}
           <div>
-            <button className="primary" disabled={send.isPending || scopes.size === 0 || pending}>{send.isPending ? "보내는 중…" : "기능 권한 신청 보내기"}</button>
+            <button className="primary" disabled={preview || send.isPending || scopes.size === 0 || pending}>{send.isPending ? "보내는 중…" : "기능 권한 신청 보내기"}</button>
           </div>
         </form>
     </section>

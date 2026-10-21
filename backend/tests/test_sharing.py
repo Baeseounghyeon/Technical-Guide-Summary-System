@@ -1,4 +1,4 @@
-"""파트너 간 가이드 공유: 목록 → 다운로드 요청 → 소유 파트너사 알림·승인 → 요청 파트너사 다운로드."""
+"""파트너 간 가이드 받기: 목록 → 다운로드 요청 → 관리자 알림·승인(승인 처리는 관리자 기능) → 요청 파트너사 다운로드."""
 
 from pathlib import Path
 
@@ -57,24 +57,27 @@ def test_guide_sharing_with_approval(client, tmp_path):
     assert client.get(f"/api/shared-guides/{guide_id}/exports", headers=requester).status_code == 403
     assert client.post(f"/api/shared-guides/{guide_id}/requests", json={}, headers=far).status_code == 404
 
-    # 2) 요청 → 소유 파트너사의 파트너 관리자와 문서를 올린 사람에게 알림
+    # 2) 요청 → 관리자에게 알림 (승인 처리는 관리자 기능: 소유 회사 관리자·작성자는 승인하지 않는다)
     r = client.post(f"/api/shared-guides/{guide_id}/requests", json={"message": "고객사 설치 지원용"}, headers=requester)
     assert r.status_code == 201, r.text
     req_id = r.json()["id"]
     assert client.post(f"/api/shared-guides/{guide_id}/requests", json={}, headers=req_colleague).status_code == 409
-    for who in (owner_admin, uploader):
-        notes = client.get("/api/notifications", headers=who).json()
-        assert notes["unread"] == 1 and notes["items"][0]["kind"] == "download_request" and notes["items"][0]["actionable"]
-        assert "고객사 설치 지원용" in notes["items"][0]["body"]
-    assert client.get("/api/notifications", headers=owner_eng).json()["unread"] == 0  # 승인권자가 아님
-    assert client.post(f"/api/download-requests/{req_id}/decision", json={"approve": True}, headers=owner_eng).status_code == 404
+
+    def request_note(headers):
+        items = client.get("/api/notifications", headers=headers).json()["items"]
+        return next((n for n in items if n["kind"] == "download_request" and n["related_id"] == req_id), None)
+
+    note = request_note(admin)
+    assert note and note["actionable"] and "고객사 설치 지원용" in note["body"] and note["link"] == "/requests/approvals?kind=download"
+    for who in (owner_admin, uploader, owner_eng):
+        assert request_note(who) is None
+        assert client.post(f"/api/download-requests/{req_id}/decision", json={"approve": True}, headers=who).status_code == 404
     assert client.post(f"/api/download-requests/{req_id}/decision", json={"approve": True}, headers=requester).status_code == 404
 
-    # 3) 승인 → 요청자에게 알림, 요청 파트너사 사용자 모두 다운로드 가능
-    r = client.post(f"/api/download-requests/{req_id}/decision", json={"approve": True, "note": "참고용으로만"}, headers=uploader)
+    # 3) 관리자 승인 → 요청자에게 알림, 요청 파트너사 사용자 모두 다운로드 가능
+    r = client.post(f"/api/download-requests/{req_id}/decision", json={"approve": True, "note": "참고용으로만"}, headers=admin)
     assert r.json()["status"] == "approved"
-    owner_admin_notes = client.get("/api/notifications", headers=owner_admin).json()
-    assert owner_admin_notes["unread"] == 0 and not owner_admin_notes["items"][0]["actionable"]  # 다른 승인권자 알림은 정리됨
+    assert not request_note(admin)["actionable"]  # 처리한 알림은 정리됨
     decision = client.get("/api/notifications", headers=requester).json()["items"][0]
     assert decision["kind"] == "download_decision" and "승인" in decision["title"] and "참고용으로만" in decision["body"]
 
@@ -93,12 +96,12 @@ def test_guide_sharing_with_approval(client, tmp_path):
     req_p2 = _partner(client, admin, "공유요청사2", [vendor["id"]])
     requester2 = _signup_and_approve(client, admin, "req3@share.example.com", req_p2["id"])
     rid2 = client.post(f"/api/shared-guides/{guide_id}/requests", json={}, headers=requester2).json()["id"]
-    client.post(f"/api/download-requests/{rid2}/decision", json={"approve": False, "note": "내부 문서"}, headers=owner_admin)
+    client.post(f"/api/download-requests/{rid2}/decision", json={"approve": False, "note": "내부 문서"}, headers=admin)
     assert client.get(f"/api/exports/{export_id}/download", headers=requester2).status_code == 404
     shared2 = client.get("/api/shared-guides", headers=requester2).json()[0]
     assert shared2["request_status"] == "rejected" and shared2["decision_note"] == "내부 문서"
     assert client.post(f"/api/shared-guides/{guide_id}/requests", json={"message": "재요청"}, headers=requester2).status_code == 201
 
-    incoming = client.get("/api/download-requests/incoming", headers=owner_admin).json()
+    incoming = [r for r in client.get("/api/download-requests/incoming", headers=admin).json() if r["guide_id"] == guide_id]
     assert [r["status"] for r in incoming] == ["pending", "rejected", "approved"]
-    assert client.get("/api/download-requests/incoming", headers=owner_eng).json() == []
+    assert client.get("/api/download-requests/incoming", headers=owner_admin).json() == []

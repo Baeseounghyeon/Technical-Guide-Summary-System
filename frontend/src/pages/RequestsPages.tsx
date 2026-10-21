@@ -25,7 +25,7 @@ export function MyRequestsPage() {
 
 /** 도메인 열람 신청 양식: 다른 벤더 도메인 문서까지 볼 수 있도록 관리자에게 열람을 요청한다.
  *  이름·메일·회사명은 가입 정보로 미리 채우고 고칠 수 있다. */
-export function DomainRequestForm() {
+export function DomainRequestForm({ preview = false }: { preview?: boolean }) {
   const { me } = useAuth();
   const queryClient = useQueryClient();
   const domains = useQuery({ queryKey: ["community", "domains"], queryFn: () => api<Domain[]>("/community/domains") });
@@ -81,7 +81,7 @@ export function DomainRequestForm() {
           </div>
           {domains.data && options.length === 0 && <p className="muted">요청할 수 있는 다른 도메인이 없습니다.</p>}
           {send.error && <p className="error">{send.error.message}</p>}
-          <div><button className="primary" disabled={send.isPending}>{send.isPending ? "보내는 중…" : "권한 요청 보내기"}</button></div>
+          <div><button className="primary" disabled={preview || send.isPending}>{send.isPending ? "보내는 중…" : "도메인 열람 신청 보내기"}</button></div>
         </form>
       </section>
   );

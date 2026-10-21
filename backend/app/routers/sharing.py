@@ -18,6 +18,7 @@ from ..models import (
     Role,
     SourceDocument,
     User,
+    UserStatus,
     utcnow,
 )
 from ..schemas import (
@@ -132,13 +133,11 @@ def request_download(
 
 @router.get("/download-requests/incoming", response_model=list[DownloadRequestOut])
 def incoming_requests(user: User = Depends(get_active_user), db: Session = Depends(get_db)) -> list[DownloadRequestOut]:
-    """내 파트너사 가이드에 들어온 요청 (승인 권한이 없으면 빈 목록)."""
-    query = select(DownloadRequest).order_by(DownloadRequest.id.desc())
+    """들어온 가이드 받기 신청 (승인 처리는 관리자 기능이라 관리자만, 그 밖에는 빈 목록)."""
     if not is_admin(user):
-        if user.partner_id is None:
-            return []
-        query = query.where(DownloadRequest.owner_partner_id == user.partner_id)
-    return [_request_out(db, user, r) for r in db.scalars(query) if _can_decide(user, r)]
+        return []
+    query = select(DownloadRequest).order_by(DownloadRequest.id.desc())
+    return [_request_out(db, user, r) for r in db.scalars(query)]
 
 
 @router.get("/download-requests/outgoing", response_model=list[DownloadRequestOut])
@@ -237,23 +236,12 @@ def _latest_request(db: Session, guide_id: int, partner_id: int) -> DownloadRequ
 
 
 def _approvers(db: Session, req: DownloadRequest) -> list[User]:
-    """소유 파트너사의 파트너 관리자 + 그 문서를 올린 사람."""
-    users = {
-        u.id: u
-        for u in db.scalars(select(User).where(User.partner_id == req.owner_partner_id, User.role == Role.PARTNER_ADMIN))
-    }
-    uploader = db.get(User, req.guide.document.uploaded_by)
-    if uploader and uploader.partner_id == req.owner_partner_id:
-        users[uploader.id] = uploader
-    return list(users.values())
+    """승인 처리는 관리자 기능: 사용 중인 플랫폼 관리자 모두에게 알린다."""
+    return list(db.scalars(select(User).where(User.role == Role.PLATFORM_ADMIN, User.status == UserStatus.ACTIVE)))
 
 
 def _can_decide(user: User, req: DownloadRequest) -> bool:
-    if is_admin(user):
-        return True
-    if user.partner_id != req.owner_partner_id:
-        return False
-    return user.role == Role.PARTNER_ADMIN or req.guide.document.uploaded_by == user.id
+    return is_admin(user)
 
 
 def _request_out(db: Session, user: User, r: DownloadRequest) -> DownloadRequestOut:

@@ -41,7 +41,7 @@ export default function App() {
       <Route path="/my-requests" element={<Navigate to="/requests" replace />} />
       <Route path="/requests" element={<Protected><MyRequestsPage /></Protected>} />
       <Route path="/requests/apply" element={<Protected><ApplyPage /></Protected>} />
-      <Route path="/requests/approvals" element={<Protected><ApprovalsPage /></Protected>} />
+      <Route path="/requests/approvals" element={<Protected roles={["platform_admin"]}><ApprovalsPage /></Protected>} />
       {/* 예전 주소: 권한 신청·승인 처리로 합쳤다 */}
       <Route path="/requests/domain" element={<Navigate to="/requests/apply?kind=domain" replace />} />
       <Route path="/specs" element={<Protected><RegisteredTypePage key="spec" docType="spec" /></Protected>} />
@@ -107,7 +107,7 @@ function Protected({ children, roles, sales, perm }: { children: ReactNode; role
           <GuidesMenu canEdit={can("guide")} />
           <TypeMenu base="/quotes" label="견적서" canEdit={can("quote")} create />
           <NavLink to="/community">커뮤니티</NavLink>
-          <RequestsMenu canApprove={isAdmin || me.role === "partner_admin" || can("guide")} />
+          <RequestsMenu canApprove={isAdmin} />
           {SETTINGS_ROLES.includes(me.role) && (!isSales || isAdmin) && <NavLink to="/settings">설정</NavLink>}
           {me.role === "platform_admin" && <NavLink to="/admin">관리자</NavLink>}
         </nav>
@@ -177,7 +177,7 @@ function GuidesMenu({ canEdit }: { canEdit: boolean }) {
 }
 
 /** 상단 '요청' 메뉴: 누르면 작업 내역, 마우스를 올리면 작업 내역·권한 신청(기능 권한·도메인 열람·가이드 받기·가이드 공유)·승인 처리.
- *  승인 처리는 승인할 수 있는 사람(관리자, 파트너 관리자, 가이드를 올리는 사람)에게만 보인다. */
+ *  승인 처리는 관리자 기능이라 관리자에게만 보인다. 관리자는 모든 권한을 가져 신청할 일은 없지만, 사용자 화면을 확인하도록 권한 신청도 보인다. */
 function RequestsMenu({ canApprove }: { canApprove: boolean }) {
   const { pathname } = useLocation();
   const items = [

@@ -29,7 +29,7 @@ const KINDS: { key: Kind; label: string; desc: string; approver: string }[] = [
     key: "download",
     label: "가이드 받기",
     desc: "같은 벤더를 지원하는 다른 파트너사가 만든 가이드의 최종 문서(Word·PPT)를 내려받으려면 신청합니다.",
-    approver: "그 가이드를 가진 회사의 관리자·작성자 승인",
+    approver: "관리자 승인",
   },
   {
     key: "share",
@@ -71,9 +71,10 @@ export function ApplyPage() {
       </div>
 
       <h2 className="section-title">{current.label}</h2>
-      {kind === "permission" &&
-        (isAdmin ? <AdminNote what="모든 기능" /> : <PermissionRequestForm />)}
-      {kind === "domain" && (isAdmin ? <AdminNote what="모든 도메인" /> : <DomainRequestForm />)}
+      {/* 관리자는 모든 권한의 마스터라 신청하지 않는다. 일반 사용자 화면을 확인할 수 있게 같은 양식을 보내기 없이 보여 준다. */}
+      {isAdmin && (kind === "permission" || kind === "domain") && <AdminNote what={kind === "permission" ? "모든 기능" : "모든 도메인"} />}
+      {kind === "permission" && <PermissionRequestForm preview={isAdmin} />}
+      {kind === "domain" && <DomainRequestForm preview={isAdmin} />}
       {kind === "download" && <SharedGuidesPanel />}
       {kind === "share" && <GuideSharePanel />}
 
@@ -84,9 +85,9 @@ export function ApplyPage() {
 
 function AdminNote({ what }: { what: string }) {
   return (
-    <section className="card">
-      <p className="muted" style={{ margin: 0 }}>관리자 계정은 {what}을 이미 가지고 있어 신청할 필요가 없습니다. 다른 사용자의 신청은 요청 &gt; 승인 처리에서 승인합니다.</p>
-    </section>
+    <p className="notice">
+      미리보기: 일반 사용자에게 보이는 신청 양식입니다. 관리자 계정은 {what}을 이미 가지고 있어 보낼 수 없습니다. 사용자의 신청은 요청 &gt; 승인 처리에서 승인합니다.
+    </p>
   );
 }
 
@@ -154,14 +155,10 @@ function MyApplications() {
 
 type ApprovalKind = "all" | "permission" | "domain" | "download";
 
-/** 요청 > 승인 처리: 내가 승인할 수 있는 신청을 한 화면에서. 관리자는 기능 권한·도메인 열람까지, 그 밖에는 우리 가이드에 들어온 가이드 받기. */
+/** 요청 > 승인 처리 (관리자 전용): 기능 권한·도메인 열람·가이드 받기 신청을 한 화면에서 승인·반려한다. */
 export function ApprovalsPage() {
-  const { me } = useAuth();
-  const isAdmin = me?.role === "platform_admin";
   const [params, setParams] = useSearchParams();
-  const tabs: [ApprovalKind, string][] = isAdmin
-    ? [["all", "전체"], ["permission", "기능 권한"], ["domain", "도메인 열람"], ["download", "가이드 받기"]]
-    : [["download", "가이드 받기"]];
+  const tabs: [ApprovalKind, string][] = [["all", "전체"], ["permission", "기능 권한"], ["domain", "도메인 열람"], ["download", "가이드 받기"]];
   const asked = params.get("kind") as ApprovalKind | null;
   const tab: ApprovalKind = tabs.some(([k]) => k === asked) ? asked! : tabs[0][0];
   const show = (k: ApprovalKind) => tab === "all" || tab === k;
@@ -170,22 +167,16 @@ export function ApprovalsPage() {
     <>
       <div className="page-header">
         <h1>승인 처리</h1>
-        <p className="muted">
-          {isAdmin
-            ? "사용자가 보낸 기능 권한·도메인 열람 신청과, 우리 가이드에 들어온 가이드 받기 신청을 승인하거나 반려합니다."
-            : "다른 파트너사가 우리 가이드를 받겠다고 보낸 신청을 승인하거나 거절합니다. 파트너 관리자와 그 가이드를 올린 사람이 처리할 수 있습니다."}
-        </p>
+        <p className="muted">사용자가 권한 신청에서 보낸 기능 권한·도메인 열람·가이드 받기 신청을 승인하거나 반려합니다.</p>
       </div>
-      {tabs.length > 1 && (
-        <div className="filters">
-          {tabs.map(([k, label]) => (
-            <button key={k} className={tab === k ? "active" : ""} onClick={() => setParams(k === "all" ? {} : { kind: k })}>{label}</button>
-          ))}
-        </div>
-      )}
+      <div className="filters">
+        {tabs.map(([k, label]) => (
+          <button key={k} className={tab === k ? "active" : ""} onClick={() => setParams(k === "all" ? {} : { kind: k })}>{label}</button>
+        ))}
+      </div>
       <div className="approval-list">
-        {isAdmin && show("permission") && <AdminPermissionRequests />}
-        {isAdmin && show("domain") && <AccessRequests />}
+        {show("permission") && <AdminPermissionRequests />}
+        {show("domain") && <AccessRequests />}
         {show("download") && <DownloadRequestsPanel kind="incoming" />}
       </div>
     </>

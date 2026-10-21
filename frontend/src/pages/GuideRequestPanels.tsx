@@ -116,7 +116,7 @@ export function DownloadRequestsPanel({ kind }: { kind: "incoming" | "outgoing" 
   return (
     <section className="card">
       <h2 style={{ margin: "0 0 4px" }}>{kind === "incoming" ? "가이드 받기" : "우리 파트너사가 보낸 요청"}</h2>
-      {kind === "incoming" && <p className="muted">다른 파트너사가 우리 가이드를 받겠다고 보낸 요청입니다. 파트너 관리자와 그 문서를 올린 사람이 승인합니다.</p>}
+      {kind === "incoming" && <p className="muted">다른 파트너사가 만든 가이드를 받겠다고 보낸 신청입니다. 승인하면 신청한 회사 사용자 모두가 그 가이드의 최종 문서를 내려받습니다.</p>}
       {requests.data?.length === 0 && <p className="muted">요청이 없습니다.</p>}
       {!!requests.data?.length && (
         <div className="table-wrap">
