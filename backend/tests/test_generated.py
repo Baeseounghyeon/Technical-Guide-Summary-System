@@ -1,5 +1,5 @@
-"""규격서·견적서 생성: 등록한 규격서를 재사용해 필수 입력값을 채우고, 고쳐서 새로 만들고, 버전 이력이 쌓인다.
-업무 구분: 규격서·견적서 생성은 영업만(관리자 포함), 엔지니어는 불가."""
+"""견적서 생성·생성한 견적서. 업무 구분: 견적서 생성은 영업만(관리자 포함), 엔지니어는 불가.
+(규격서 생성 기능은 삭제됨 — 그 API 가 없어졌는지도 확인한다.)"""
 
 import io
 from pathlib import Path
@@ -14,65 +14,12 @@ from .conftest import ADMIN, login
 from .test_flow import _partner_with_vendor, _signup_and_approve
 
 
-def _spec_docx(path: Path) -> None:
-    d = Document()
-    d.add_heading("테스트 규격서", 0)
-    for label, text in [("항목 A", "Luna HSM"), ("항목 B", "Luna 7 A790"), ("항목 C", "2대"), ("항목 D", "본사 전산실"), ("항목 E", "FIPS 140-3 Level 3 인증")]:
-        d.add_heading(label, 1)
-        d.add_paragraph(text)
-    d.save(str(path))
-
-
-def test_spec_generation_reuse_and_versions(client, tmp_path: Path):
+def test_spec_generation_removed(client):
+    """규격서 생성·생성한 규격서는 삭제: 그 API 는 없고, 목록도 견적서만 받는다."""
     admin = login(client, *ADMIN)
-    partner, vendor = _partner_with_vendor(client, admin, "생성파트너", "GenVendor")
-    sales = _signup_and_approve(client, admin, "gen-sales@g.example.com", partner["id"])
-    sales_id = client.get("/api/auth/me", headers=sales).json()["id"]
-    client.post(f"/api/admin/users/{sales_id}/approve", json={"partner_id": partner["id"], "track": "sales"}, headers=admin)
-    engineer = _signup_and_approve(client, admin, "gen-eng@g.example.com", partner["id"])
-
-    src = tmp_path / "spec.docx"
-    _spec_docx(src)
-    with src.open("rb") as f:
-        doc = client.post(
-            "/api/documents", data={"vendor_id": vendor["id"], "doc_type": "spec", "title": "테스트 규격서"},
-            files={"file": ("spec.docx", f)}, headers=sales,
-        ).json()
-    run_pending_jobs()
-
-    fields = client.get("/api/forms/spec/fields", headers=sales).json()
-    assert [f["key"] for f in fields] == ["a", "b", "c", "d", "e"]
-
-    # 재사용: 등록한 규격서의 내용이 필수 입력값에 채워진다
-    filled = client.get(f"/api/forms/spec/prefill?document_id={doc['id']}", headers=sales).json()
-    assert filled["fields"] == {"a": "Luna HSM", "b": "Luna 7 A790", "c": "2대", "d": "본사 전산실", "e": "FIPS 140-3 Level 3 인증"}
-    assert client.get(f"/api/forms/spec/prefill?document_id={doc['id']}", headers=engineer).status_code == 403
-
-    # 미리보기는 PDF
-    body = {"doc_type": "spec", "title": "새 규격서", "fields": filled["fields"], "source_document_id": doc["id"]}
-    r = client.post("/api/forms/preview", json=body, headers=sales)
-    assert r.status_code == 200 and r.content.startswith(b"%PDF")
-
-    # 필수값이 비면 생성 불가, 엔지니어도 불가
-    assert client.post("/api/generated", json={**body, "fields": {**filled["fields"], "c": ""}}, headers=sales).status_code == 400
-    assert client.post("/api/generated", json=body, headers=engineer).status_code == 403
-
-    # 고쳐서 생성 → v1, 다시 고쳐서 → v2 (같은 이력)
-    v1 = client.post("/api/generated", json={**body, "fields": {**filled["fields"], "c": "3대"}}, headers=sales).json()
-    assert v1["version"] == 1 and v1["fields"]["c"] == "3대" and v1["source_document_title"] == "테스트 규격서"
-    v2 = client.post("/api/generated", json={**body, "fields": {**v1["fields"], "c": "4대"}, "based_on_id": v1["id"]}, headers=sales).json()
-    assert v2["version"] == 2 and v2["root_id"] == v1["id"] and v2["based_on_id"] == v1["id"]
-
-    rows = client.get("/api/generated?doc_type=spec", headers=sales).json()
-    assert [(g["version"], g["fields"]["c"]) for g in rows] == [(2, "4대"), (1, "3대")]
-    assert client.get("/api/generated?doc_type=quote", headers=sales).json() == []
-
-    for fmt, magic in [("pdf", b"%PDF"), ("docx", b"PK")]:
-        r = client.get(f"/api/generated/{v2['id']}/download?format={fmt}", headers=sales)
-        assert r.status_code == 200 and r.content.startswith(magic)
-
-    # 견적서는 단계별 견적서 생성(/api/quote-builder)으로만 만든다
-    assert client.post("/api/generated", json={**body, "doc_type": "quote", "title": "견적서"}, headers=sales).status_code == 400
+    assert client.get("/api/forms/spec/fields", headers=admin).status_code == 404
+    assert client.post("/api/generated", json={"doc_type": "spec", "title": "x", "fields": {}}, headers=admin).status_code == 405
+    assert client.get("/api/generated?doc_type=spec", headers=admin).status_code == 422
 
 
 def test_my_guides_lists_created_guides(client):
@@ -98,8 +45,8 @@ def _sales(client, admin, email: str, partner_id: int) -> dict:
     return headers
 
 
-def test_price_list_purchase_types_and_spec_attachments(client, tmp_path: Path):
-    """제품 가격표·매입 금액: 문서 등록의 종류(영업만, PDF·Word·Excel). 규격서는 Excel 도 받고, 규격서 생성 때 둘을 첨부한다."""
+def test_price_list_purchase_types(client, tmp_path: Path):
+    """제품 가격표·매입 금액: 문서 등록의 종류(영업만, PDF·Word·Excel). 규격서도 Excel 을 받는다."""
     admin = login(client, *ADMIN)
     partner, vendor = _partner_with_vendor(client, admin, "가격표파트너", "PriceVendor")
     sales = _sales(client, admin, "price-sales@p.example.com", partner["id"])
@@ -125,14 +72,8 @@ def test_price_list_purchase_types_and_spec_attachments(client, tmp_path: Path):
     ).status_code == 400  # 파일만
     run_pending_jobs()
 
-    filled = client.get(f"/api/forms/spec/prefill?document_id={spec['id']}", headers=sales).json()
-    assert filled["fields"] == {"a": "Luna HSM", "b": "A790", "c": "2대", "d": "본사", "e": "FIPS 140-3"}
     assert [d["title"] for d in client.get("/api/documents?doc_type=price_list", headers=sales).json()] == ["가격표"]
 
-    body = {"doc_type": "spec", "title": "첨부 규격서", "fields": filled["fields"], "source_document_id": spec["id"]}
-    assert client.post("/api/generated", json={**body, "attachments": {"price_list": purchase["id"]}}, headers=sales).status_code == 400
-    g = client.post("/api/generated", json={**body, "attachments": {"price_list": price["id"], "purchase": purchase["id"]}}, headers=sales).json()
-    assert [(a["label"], a["title"]) for a in g["attachments"]] == [("제품 가격표", "가격표"), ("매입 금액", "매입가")]
 
 
 def _template_docx(path: Path) -> None:

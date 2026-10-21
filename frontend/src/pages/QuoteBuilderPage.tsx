@@ -438,7 +438,7 @@ export default function QuoteBuilderPage() {
             );
           })}
         </ol>
-        <h2 className="section-title">({step}) {STEPS[step - 1]}</h2>
+        <h2 className="section-title">{STEPS[step - 1]}</h2>
         <p className="muted">{stepHint[step]}</p>
 
         {step === 1 && (

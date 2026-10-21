@@ -4,7 +4,7 @@
     글자: {{제목}} {{작성자}} {{소속}} {{부서}} {{이메일}} {{전화번호}} {{작성일}} {{버전}}
     표:   {{제품가격표}} {{매입금액}}  — 그 자리(Word 는 그 문단, Excel 은 그 칸부터 아래로)에 체크한 항목 표를 넣는다.
     표 자리 표시가 없으면 문서 끝(Excel 은 첫 시트의 마지막 행 아래)에 붙인다.
-- 양식이 없으면 기본 양식(규격서와 같은 남색 띠 형식)으로 PDF·Word·Excel 을 만든다.
+- 양식이 없으면 기본 양식(남색 띠 형식)으로 PDF·Word·Excel 을 만든다.
 - 미리보기는 실제로 만들어질 파일을 HTML 로 바꿔 보여 준다.
 """
 
@@ -16,6 +16,8 @@ from pathlib import Path
 import pymupdf
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
 from docx.shared import Pt, RGBColor
 from docx.table import Table
 from docx.text.paragraph import Paragraph
@@ -23,7 +25,18 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 
 from .docx_export import _set_default_font
-from .form_export import NAVY, _shade
+
+NAVY = "1F2A6B"  # 견적서 제목 띠 색
+
+
+def _shade(cell, color: str) -> None:
+    props = cell._tc.get_or_add_tcPr()
+    shd = OxmlElement("w:shd")
+    shd.set(qn("w:val"), "clear")
+    shd.set(qn("w:color"), "auto")
+    shd.set(qn("w:fill"), color)
+    props.append(shd)
+
 
 AUTHOR_FIELDS = [("name", "작성자"), ("company", "소속"), ("department", "부서"), ("email", "이메일"), ("phone", "전화번호")]
 MEDIA = {

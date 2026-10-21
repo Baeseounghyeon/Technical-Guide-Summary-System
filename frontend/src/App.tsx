@@ -20,7 +20,7 @@ import QuotesPage from "./pages/QuotesPage";
 import { DomainRequestPage, MyRequestsPage } from "./pages/RequestsPages";
 import { PermissionRequestPage } from "./pages/PermissionPages";
 import GuideSharePage from "./pages/GuideSharePage";
-import { CreatedGuidesPage, FormCreatePage, GeneratedListPage, GuideCreatePage } from "./pages/GeneratePages";
+import { CreatedGuidesPage, GeneratedListPage, GuideCreatePage } from "./pages/GeneratePages";
 import QuoteBuilderPage from "./pages/QuoteBuilderPage";
 import HomeDetailPage from "./pages/HomeDetailPage";
 import TrashPage from "./pages/TrashPage";
@@ -46,8 +46,6 @@ export default function App() {
       <Route path="/requests/domain" element={<Protected><DomainRequestPage /></Protected>} />
       <Route path="/specs" element={<Protected><RegisteredTypePage key="spec" docType="spec" /></Protected>} />
       <Route path="/specs/org" element={<Protected><OrgTypePage key="spec-org" docType="spec" /></Protected>} />
-      <Route path="/specs/create" element={<Protected perm="spec"><FormCreatePage key="spec-create" docType="spec" /></Protected>} />
-      <Route path="/specs/created" element={<Protected perm="spec"><GeneratedListPage key="spec-created" docType="spec" /></Protected>} />
       <Route path="/brochures" element={<Protected><RegisteredTypePage key="brochure" docType="brochure" /></Protected>} />
       <Route path="/brochures/org" element={<Protected><OrgTypePage key="brochure-org" docType="brochure" /></Protected>} />
       <Route path="/documents/:id" element={<Protected><DocumentPage /></Protected>} />
@@ -63,7 +61,7 @@ export default function App() {
       <Route path="/quotes/org" element={<Protected><OrgTypePage key="quote-org" docType="quote" /></Protected>} />
       <Route path="/quotes/work" element={<Protected><QuotesPage /></Protected>} />
       <Route path="/quotes/create" element={<Protected perm="quote"><QuoteBuilderPage /></Protected>} />
-      <Route path="/quotes/created" element={<Protected perm="quote"><GeneratedListPage key="quote-created" docType="quote" /></Protected>} />
+      <Route path="/quotes/created" element={<Protected perm="quote"><GeneratedListPage /></Protected>} />
       <Route path="/community" element={<Protected><CommunityPage /></Protected>} />
       <Route path="/community/:vendorId" element={<Protected><DomainPage /></Protected>} />
       <Route path="/community/posts/:id" element={<Protected><PostPage /></Protected>} />
@@ -99,7 +97,7 @@ function Protected({ children, roles, sales, perm }: { children: ReactNode; role
           <NavLink to="/" end>홈</NavLink>
           <DocsMenu />
           {/* 등록 권한이 있으면 '등록한 ○○', 없으면 같은 조직이 올린 것을 내려받기만 하는 '등록된 ○○' */}
-          <TypeMenu base="/specs" label="규격서" canEdit={can("spec")} create />
+          <TypeMenu base="/specs" label="규격서" canEdit={can("spec")} />
           <GuidesMenu canEdit={can("guide")} />
           <TypeMenu base="/quotes" label="견적서" canEdit={can("quote")} create />
           <TypeMenu base="/brochures" label="브로슈어" canEdit={can("brochure")} />

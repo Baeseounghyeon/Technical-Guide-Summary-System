@@ -754,7 +754,7 @@ class GeneratedDocument(Base):
     doc_type: Mapped[str] = mapped_column(String(20), index=True)  # spec | quote
     title: Mapped[str] = mapped_column(String(300))
     fields: Mapped[dict] = mapped_column(JSON, default=dict)
-    # 규격서 생성 때 가져온 기타 문서: {"price_list": 문서 id, "purchase": 문서 id}
+    # 견적서에 쓴 문서: {"price_list": 문서 id, "purchase": [문서 id, …]}
     attachments: Mapped[dict | None] = mapped_column(JSON)
     source_document_id: Mapped[int | None] = mapped_column(ForeignKey("source_documents.id", ondelete="SET NULL"))
     root_id: Mapped[int | None] = mapped_column(ForeignKey("generated_documents.id", ondelete="SET NULL"), index=True)

@@ -97,7 +97,7 @@ export const DOC_TYPES = [
 ] as const;
 export type DocTypeKey = (typeof DOC_TYPES)[number]["key"];
 
-/** 제품 가격표·매입 금액 (문서 등록의 종류, 영업만). 견적서 생성에서 항목을 뽑고, 규격서 생성에 첨부한다. */
+/** 제품 가격표·매입 금액 (문서 등록의 종류, 영업만). 견적서 생성에서 항목을 뽑는다. */
 export const EXTRA_KINDS = [
   { key: "price_list", label: "제품 가격표" },
   { key: "purchase", label: "매입 금액" },
