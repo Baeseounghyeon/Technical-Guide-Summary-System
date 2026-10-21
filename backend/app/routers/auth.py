@@ -11,8 +11,8 @@ from ..security import create_access_token, hash_password, verify_password
 router = APIRouter(prefix="/api/auth", tags=["인증"])
 
 
-@router.post("/signup", response_model=UserOut, status_code=status.HTTP_201_CREATED)
-def signup(body: SignupIn, db: Session = Depends(get_db)) -> User:
+def create_pending_user(db: Session, body: SignupIn) -> User:
+    """가입 신청 항목으로 승인 대기 계정을 만든다 (회원가입·관리자 사용자 추가 공용)."""
     email = body.email.lower()
     if db.scalar(select(User).where(User.email == email)):
         raise HTTPException(status.HTTP_409_CONFLICT, "이미 가입된 이메일입니다.")
@@ -28,6 +28,11 @@ def signup(body: SignupIn, db: Session = Depends(get_db)) -> User:
     db.add(user)
     db.commit()
     return user
+
+
+@router.post("/signup", response_model=UserOut, status_code=status.HTTP_201_CREATED)
+def signup(body: SignupIn, db: Session = Depends(get_db)) -> User:
+    return create_pending_user(db, body)
 
 
 @router.post("/login", response_model=TokenOut)

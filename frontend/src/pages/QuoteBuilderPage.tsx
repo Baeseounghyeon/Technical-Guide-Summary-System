@@ -222,7 +222,7 @@ export default function QuoteBuilderPage() {
         <div className="filters domain-tabs" role="tablist" aria-label="견적서 도메인">
           {domains.map((d) => (
             <button key={d.key} role="tab" aria-selected={d.key === current.key} className={d.key === current.key ? "active" : ""} onClick={() => pick(d.key)}>
-              {d.name} 견적서 생성
+              {d.name}
             </button>
           ))}
         </div>

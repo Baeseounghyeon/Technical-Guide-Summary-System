@@ -11,7 +11,7 @@ export default function AdminPage() {
     <>
       <div className="page-header">
         <h1>관리자</h1>
-        <p className="muted">가입자 승인·수정·삭제, AI 사용량과 회사별 한도, 다른 도메인 권한 신청, 파트너사와 벤더 도메인을 관리합니다.</p>
+        <p className="muted">사용자 추가, 가입자 승인·수정·삭제, AI 사용량과 회사별 한도, 다른 도메인 권한 신청, 파트너사와 벤더 도메인을 관리합니다.</p>
       </div>
       <Members />
       <AdminPermissionRequests />
@@ -54,13 +54,26 @@ function Members() {
     .sort((a, b) => Number(b.status === "pending") - Number(a.status === "pending"));
   const pendingCount = (users.data ?? []).filter((u) => u.status === "pending").length;
   const pendingIn = (t: Track) => (users.data ?? []).filter((u) => u.status === "pending" && trackOf(u) === t).length;
+  const [adding, setAdding] = useState(false);
+  // 추가한 사용자는 승인 대기로 들어가므로, 그 사용자의 승인 칸을 바로 연다
+  const added = (u: AdminUser) => {
+    setAdding(false);
+    setTrack(trackOf(u));
+    setStatusFilter("");
+    setQ("");
+    setEditing(u.id);
+  };
 
   return (
     <section className="card">
       <div className="summary-head">
         <h2 style={{ margin: 0 }}>가입자</h2>
-        {pendingCount > 0 && <span className="badge pending">승인 대기 {pendingCount}명</span>}
+        <div className="actions">
+          {pendingCount > 0 && <span className="badge pending">승인 대기 {pendingCount}명</span>}
+          {!adding && <button className="primary" onClick={() => setAdding(true)}>사용자 추가</button>}
+        </div>
       </div>
+      {adding && <AddUserForm onDone={added} onCancel={() => setAdding(false)} />}
       <div className="filters">
         {(["engineer", "sales"] as Track[]).map((t) => (
           <button key={t} className={track === t ? "active" : ""} onClick={() => setTrack(t)}>
@@ -275,6 +288,52 @@ function AccessRequestRow({ grant, onDone }: { grant: AccessGrant; onDone: () =>
 }
 
 const PERMISSION_LABELS: Record<string, string> = { guide: "가이드", spec: "규격서", quote: "견적서", brochure: "브로슈어" };
+
+const NEW_USER = { email: "", password: "", name: "", company_name: "", department: "", phone: "", track: "engineer" as Track };
+
+/** 관리자 사용자 추가: 회원가입과 같은 항목. 추가하면 승인 대기로 들어가고, 이어서 승인에서 소속·도메인을 정한다. */
+function AddUserForm({ onDone, onCancel }: { onDone: (u: AdminUser) => void; onCancel: () => void }) {
+  const [form, setForm] = useState(NEW_USER);
+  const queryClient = useQueryClient();
+  const set = (key: keyof typeof NEW_USER) => (e: { target: { value: string } }) => setForm((f) => ({ ...f, [key]: e.target.value }));
+  const create = useMutation({
+    mutationFn: () => api<AdminUser>("/admin/users", { method: "POST", json: form }),
+    onSuccess: async (u) => {
+      await queryClient.invalidateQueries({ queryKey: ["admin"] });
+      onDone(u);
+    },
+  });
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    create.mutate();
+  };
+  return (
+    <form className="add-user" onSubmit={submit}>
+      <strong>사용자 추가</strong>
+      <p className="muted">회원가입과 같은 항목입니다. 추가하면 승인 대기로 들어가며, 이어서 열리는 승인 칸에서 소속·권한·도메인을 정하면 로그인할 수 있습니다.</p>
+      <div className="add-user-fields">
+        <label>이메일<input type="email" value={form.email} onChange={set("email")} required /></label>
+        <label>비밀번호 (8자 이상)<input type="password" minLength={8} value={form.password} onChange={set("password")} autoComplete="new-password" required /></label>
+        <label>이름<input value={form.name} onChange={set("name")} required /></label>
+        <label>소속 회사<input value={form.company_name} onChange={set("company_name")} required /></label>
+        <label>부서<input value={form.department} onChange={set("department")} /></label>
+        <label>연락처<input value={form.phone} onChange={set("phone")} /></label>
+        <label>
+          업무 구분
+          <select value={form.track} onChange={set("track")}>
+            <option value="engineer">엔지니어 (기술 가이드 요약)</option>
+            <option value="sales">영업 (견적서 생성)</option>
+          </select>
+        </label>
+      </div>
+      {create.error && <p className="error">{create.error.message}</p>}
+      <div className="actions">
+        <button className="primary" disabled={create.isPending}>{create.isPending ? "추가 중…" : "추가"}</button>
+        <button type="button" onClick={onCancel}>취소</button>
+      </div>
+    </form>
+  );
+}
 
 /** 가입 승인 또는 수정: 가입자 정보(성명·회사명·이메일·전화번호·부서), 소속·권한·업무 구분, 사용자별 도메인을 한 번에 저장한다. */
 function AssignForm({ user, partners, onDone }: { user: AdminUser; partners: Partner[]; onDone: () => void }) {

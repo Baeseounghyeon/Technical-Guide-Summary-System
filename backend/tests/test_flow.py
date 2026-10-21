@@ -158,3 +158,24 @@ def _export_path(export_id: int) -> str:
 
     with SessionLocal() as db:
         return db.get(Export, export_id).file_path
+
+
+def test_admin_adds_user(client):
+    """관리자 사용자 추가: 회원가입과 같은 항목, 승인 대기로 들어가 승인 뒤 로그인. 관리자만 가능."""
+    admin = login(client, *ADMIN)
+    partner, _vendor = _partner_with_vendor(client, admin, "추가파트너", "AddVendor")
+    body = {"email": "Added@add.example.com", "password": "added-pass-1", "name": "추가 사용자", "company_name": "추가회사",
+            "department": "영업팀", "phone": "010-0000-0000", "track": "sales"}
+    r = client.post("/api/admin/users", json=body, headers=admin)
+    assert r.status_code == 201, r.text
+    user = r.json()
+    assert (user["email"], user["status"], user["track"], user["department"]) == ("added@add.example.com", "pending", "sales", "영업팀")
+    assert client.post("/api/admin/users", json=body, headers=admin).status_code == 409  # 같은 이메일
+    assert client.post("/api/admin/users", json={**body, "password": "short"}, headers=admin).status_code == 422
+    assert client.post("/api/auth/login", json={"email": body["email"], "password": body["password"]}).status_code == 403  # 승인 전
+
+    other = _signup_and_approve(client, admin, "not-admin@add.example.com", partner["id"])
+    assert client.post("/api/admin/users", json={**body, "email": "x@add.example.com"}, headers=other).status_code == 403
+
+    client.post(f"/api/admin/users/{user['id']}/approve", json={"partner_id": partner["id"], "role": "engineer"}, headers=admin)
+    assert client.post("/api/auth/login", json={"email": body["email"], "password": body["password"]}).status_code == 200

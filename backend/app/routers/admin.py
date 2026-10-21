@@ -1,4 +1,4 @@
-"""플랫폼 관리자 전용: 가입 승인, 파트너사·벤더 도메인 관리."""
+"""플랫폼 관리자 전용: 사용자 추가·가입 승인, 파트너사·벤더 도메인 관리."""
 
 import uuid
 
@@ -18,11 +18,13 @@ from ..schemas import (
     PartnerOut,
     PartnerVendorsIn,
     ReadGrantBrief,
+    SignupIn,
     UserOut,
     VendorIn,
     VendorOut,
 )
 from ..services.usage import month_start, partner_quota
+from .auth import create_pending_user
 
 router = APIRouter(prefix="/api/admin", tags=["관리자"], dependencies=[Depends(require_platform_admin)])
 
@@ -68,6 +70,12 @@ def _active_read_grants(db: Session, user: User) -> list[ReadGrantBrief]:
         for g in grants
         if g.expires_at and as_utc(g.expires_at) > now
     ]
+
+
+@router.post("/users", response_model=UserOut, status_code=status.HTTP_201_CREATED)
+def add_user(body: SignupIn, db: Session = Depends(get_db)) -> User:
+    """관리자가 사용자를 직접 추가한다. 항목은 회원가입과 같고, 승인 대기로 들어가 승인에서 소속·도메인을 정한다."""
+    return create_pending_user(db, body)
 
 
 @router.post("/users/{user_id}/approve", response_model=UserOut)
