@@ -11,6 +11,7 @@ import type { DocumentSummary } from "../types";
 interface Generated {
   id: number;
   title: string;
+  fields: { domain?: string | null };
   formats: string[];
   root_id: number;
   attachments: { kind: ExtraKindKey; label: string; document_id: number; title: string | null }[];
@@ -62,11 +63,12 @@ export function GeneratedListPage() {
           <div className="table-wrap">
             <table className="quote-list" style={{ minWidth: 900 }}>
               <thead>
-                <tr><th style={{ width: "26%" }}>문서 제목</th><th>가격표·매입 금액</th><th style={{ width: 90 }}>작성자</th><th style={{ width: 170 }}>최종 생성 일시</th><th style={{ width: 110 }}>다운로드</th><th style={{ width: 64 }}>삭제</th></tr>
+                <tr><th style={{ width: 80 }}>도메인</th><th style={{ width: "24%" }}>문서 제목</th><th>가격표·매입 금액</th><th style={{ width: 90 }}>작성자</th><th style={{ width: 170 }}>최종 생성 일시</th><th style={{ width: 110 }}>다운로드</th><th style={{ width: 64 }}>삭제</th></tr>
               </thead>
               <tbody>
                 {[...latest.entries()].map(([root, g]) => (
                   <tr key={root}>
+                    <td>{g.fields.domain ?? "Thales"}</td>
                     <td><strong>{g.title}</strong></td>
                     <td className="attach-list">{attachmentCell(g)}</td>
                     <td style={{ whiteSpace: "nowrap" }}>{g.created_by_name}</td>

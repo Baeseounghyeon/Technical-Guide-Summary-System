@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, download } from "../api";
 import { useAuth } from "../auth";
 import { productLabel } from "../ProductSelect";
-import type { DocumentSummary } from "../types";
+import type { DocumentSummary, Vendor } from "../types";
 import { DocumentTable, DownloadIcon, TrashIcon } from "./DocumentsPage";
 import { FORMAT_LABELS } from "./GeneratePages";
 
@@ -182,9 +182,58 @@ function defaultTitle(list: Purchase[]): string {
   return `[${p0.meta.end_user ?? ""}] ${head} ${qty}식${parts.size > 1 ? " 외" : ""} ${renewal ? "Renewal License " : ""}공급 건`;
 }
 
-/** 견적서 생성: 가져오기(양식·등록한 견적서·제품 가격표·매입 금액·생성한 견적서)와 7단계 작성.
- *  견적서 한 행 = 매입 견적 PDF 한 건 (견적서_매핑정리.md). 최종 확인 뒤에 앞 단계를 고치면 바로 최종 확인으로 돌아온다. */
+/** 견적서를 만드는 도메인(벤더). 로그인한 사용자에게 부여된 도메인만 탭으로 보인다. */
+const QUOTE_DOMAINS = [
+  { key: "thales", name: "Thales", ready: true },
+  { key: "ahnlab", name: "Ahnlab", ready: false }, // 필요한 문서 확인 중: 화면은 Thales 와 같다
+] as const;
+type QuoteDomain = (typeof QUOTE_DOMAINS)[number] & { vendor: Vendor };
+
+/** 견적서 생성: 사용자 도메인별 탭(Thales·Ahnlab). 도메인마다 가져오는 문서(가격표·매입 금액·등록한 견적서)가 나뉜다. */
 export default function QuoteBuilderPage() {
+  const { me } = useAuth();
+  const [params, setParams] = useSearchParams();
+  const domains: QuoteDomain[] = QUOTE_DOMAINS.flatMap((d) => {
+    const vendor = me?.vendors.find((v) => v.name.trim().toLowerCase() === d.key);
+    return vendor ? [{ ...d, vendor }] : [];
+  });
+  const current = domains.find((d) => d.key === params.get("domain")) ?? domains[0];
+  if (!current)
+    return (
+      <>
+        <div className="page-header"><h1>견적서 생성</h1></div>
+        <section className="card">
+          <p className="muted">견적서 생성은 Thales 또는 Ahnlab 도메인이 부여된 사용자만 쓸 수 있습니다. 도메인이 필요하면 <Link to="/requests/domain">도메인 권한 요청</Link>을 하세요.</p>
+        </section>
+      </>
+    );
+  const pick = (key: string) =>
+    setParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set("domain", key);
+      next.delete("from");
+      return next;
+    });
+  return (
+    <QuoteBuilder
+      key={current.key}
+      domain={current}
+      tabs={
+        <div className="filters domain-tabs" role="tablist" aria-label="견적서 도메인">
+          {domains.map((d) => (
+            <button key={d.key} role="tab" aria-selected={d.key === current.key} className={d.key === current.key ? "active" : ""} onClick={() => pick(d.key)}>
+              {d.name} 견적서 생성
+            </button>
+          ))}
+        </div>
+      }
+    />
+  );
+}
+
+/** 도메인 하나의 견적서 생성: 가져오기(양식·등록한 견적서·제품 가격표·매입 금액)와 7단계 작성.
+ *  견적서 한 행 = 매입 견적 PDF 한 건 (견적서_매핑정리.md). 최종 확인 뒤에 앞 단계를 고치면 바로 최종 확인으로 돌아온다. */
+function QuoteBuilder({ domain, tabs }: { domain: QuoteDomain; tabs: ReactNode }) {
   const { me } = useAuth();
   const queryClient = useQueryClient();
   const [params] = useSearchParams();
@@ -350,6 +399,7 @@ export default function QuoteBuilderPage() {
   }, [fromId, templates.data]);
 
   const body = () => ({
+    vendor_id: domain.vendor.id,
     title,
     recipient,
     date,
@@ -393,8 +443,12 @@ export default function QuoteBuilderPage() {
     <>
       <div className="page-header">
         <h1>견적서 생성</h1>
+        {tabs}
+        {!domain.ready && (
+          <p className="notice">{domain.name} 견적서에 필요한 문서는 확인 중입니다. 화면과 단계는 Thales 견적서 생성과 같으며, 문서가 정해지면 {domain.name} 형식에 맞춰 읽고 만들도록 바뀝니다.</p>
+        )}
         <p className="muted">
-          가져오기에서 견적서 양식·제품 가격표·매입 견적을 고르고, 아래 순서대로 확인해 견적서(엑셀)를 만듭니다. 만든 견적서는 <Link to="/quotes/created">생성한 견적서</Link>에서 이력과 함께 봅니다.
+          가져오기에서 {domain.name} 도메인의 견적서 양식·제품 가격표·매입 견적을 고르고, 아래 순서대로 확인해 견적서(엑셀)를 만듭니다. 만든 견적서는 <Link to="/quotes/created">생성한 견적서</Link>에서 이력과 함께 봅니다.
         </p>
       </div>
 
@@ -413,14 +467,14 @@ export default function QuoteBuilderPage() {
         {tab === "registered" && (
           <>
             <p className="muted">문서 등록에서 올린 견적서입니다. 참고용으로 열어 보거나 내려받을 수 있습니다.</p>
-            <DocumentTable query="doc_type=quote" showStatus={false} />
+            <DocumentTable query={`doc_type=quote&vendor_id=${domain.vendor.id}`} showStatus={false} />
           </>
         )}
-        {tab === "price_list" && <DocPicker docType="price_list" checked={priceDoc ? [priceDoc.id] : []} onPick={pickPrice} />}
+        {tab === "price_list" && <DocPicker docType="price_list" vendorId={domain.vendor.id} checked={priceDoc ? [priceDoc.id] : []} onPick={pickPrice} />}
         {tab === "purchase" && (
           <>
             {loadingIds.length > 0 && <p className="muted">매입 견적 PDF를 읽는 중… ({loadingIds.length}건)</p>}
-            <DocPicker docType="purchase" multiple checked={[...purchases.map((p) => p.doc.id), ...loadingIds]} onPick={togglePurchase} />
+            <DocPicker docType="purchase" vendorId={domain.vendor.id} multiple checked={[...purchases.map((p) => p.doc.id), ...loadingIds]} onPick={togglePurchase} />
           </>
         )}
       </section>
@@ -641,9 +695,10 @@ function TemplatesPanel({ selected, onPick }: { selected: number | null; onPick:
 
 
 /** 가져오기 > 제품 가격표 · 매입 금액: 문서 등록에서 올린 문서를 고른다 (매입 견적은 여러 건). */
-function DocPicker({ docType, checked, onPick, multiple = false }: { docType: "price_list" | "purchase"; checked: number[]; onPick: (d: Picked) => void; multiple?: boolean }) {
+function DocPicker({ docType, vendorId, checked, onPick, multiple = false }: { docType: "price_list" | "purchase"; vendorId: number; checked: number[]; onPick: (d: Picked) => void; multiple?: boolean }) {
   const label = docType === "price_list" ? "제품 가격표" : "매입 금액";
-  const docs = useQuery({ queryKey: ["documents", `doc_type=${docType}`], queryFn: () => api<DocumentSummary[]>(`/documents?doc_type=${docType}`) });
+  const query = `doc_type=${docType}&vendor_id=${vendorId}`;
+  const docs = useQuery({ queryKey: ["documents", query], queryFn: () => api<DocumentSummary[]>(`/documents?${query}`) });
   if (docs.isLoading) return <p className="muted">불러오는 중…</p>;
   if (docs.error) return <p className="error">{docs.error.message}</p>;
   if (!docs.data?.length) return <p className="muted">등록한 {label}가 없습니다. <Link to={`/documents?type=${docType}`}>문서 등록</Link>에서 {label}(으)로 올리세요.</p>;

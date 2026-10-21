@@ -339,3 +339,36 @@ def test_period_from_quote_expiry():
 
     assert _period([], re.search(r"(\d+)", "12 months"), "2026-09-30") == ("2026.10.01", "2027.09.30")
     assert _period([("01", "January", "2027"), ("31", "December", "2027")], None, "") == ("2027.01.01", "2027.12.31")
+
+
+def test_quote_domains(client, tmp_path: Path):
+    """견적서 생성 도메인: 사용자에게 부여된 Thales·Ahnlab 만 고르고, 문서도 그 도메인 것만 쓴다."""
+    admin = login(client, *ADMIN)
+    partner = client.post("/api/admin/partners", json={"name": "도메인견적파트너"}, headers=admin).json()
+    def vendor(name: str) -> dict:  # 다른 테스트가 먼저 만들었으면 그대로 쓴다
+        r = client.post("/api/admin/vendors", json={"name": name}, headers=admin)
+        return r.json() if r.status_code < 300 else next(v for v in client.get("/api/auth/me", headers=admin).json()["vendors"] if v["name"] == name)
+
+    thales, ahnlab, other = (vendor(n) for n in ("Thales", "Ahnlab", "OtherDomain"))
+    client.put(f"/api/admin/partners/{partner['id']}/vendors", json={"vendor_ids": [thales["id"], other["id"]]}, headers=admin)
+    sales = _sales(client, admin, "domain-sales@d.example.com", partner["id"])
+    assert {v["name"] for v in client.get("/api/auth/me", headers=sales).json()["vendors"]} == {"Thales", "OtherDomain"}
+
+    _xlsx(tmp_path / "price.xlsx", [("제품", "단가"), ("Luna HSM", 30000000)])
+    with (tmp_path / "price.xlsx").open("rb") as f:
+        price = client.post(
+            "/api/documents", data={"vendor_id": other["id"], "doc_type": "price_list", "title": "다른 도메인 가격표"},
+            files={"file": ("price.xlsx", f)}, headers=sales,
+        ).json()
+
+    def preview(vendor_id, **extra):
+        return client.post("/api/quote-builder/preview", json={"vendor_id": vendor_id, **extra}, headers=sales)
+
+    assert preview(thales["id"]).status_code == 200
+    assert preview(ahnlab["id"]).status_code == 403  # 부여되지 않은 도메인
+    assert preview(other["id"]).status_code == 403  # 견적서 도메인이 아님
+    assert preview(thales["id"], price_list_id=price["id"]).status_code == 400  # 다른 도메인 문서
+
+    # 도메인을 바꿔 부여하면 Ahnlab 으로 만들 수 있다
+    client.put(f"/api/admin/partners/{partner['id']}/vendors", json={"vendor_ids": [thales["id"], ahnlab["id"]]}, headers=admin)
+    assert preview(ahnlab["id"]).status_code == 200

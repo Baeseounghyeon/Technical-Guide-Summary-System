@@ -14,7 +14,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..deps import get_active_user, get_readable_document, is_admin, require_permission
+from ..deps import accessible_vendors, get_active_user, get_readable_document, is_admin, require_permission
 from ..models import GeneratedDocument, QuoteTemplate, User, utcnow
 from ..schemas import UTCDateTime
 from ..services.exporters import quote_export
@@ -188,7 +188,12 @@ class Settings(BaseModel):
     ref_amount_2: float | None = Field(None, gt=0)  # U15 참고 금액
 
 
+# 견적서를 만드는 도메인(벤더 이름, 소문자). 사용자에게 부여된 도메인만 고를 수 있다.
+QUOTE_DOMAINS = ("thales", "ahnlab")
+
+
 class QuoteIn(BaseModel):
+    vendor_id: int | None = None  # 견적서 도메인(Thales·Ahnlab). 고른 문서도 이 도메인 것이어야 한다
     title: str = ""  # B8 프로젝트명
     recipient: str = ""  # B7 ○○ 귀중
     date: str = ""  # H8 견적일자 YYYY-MM-DD (비우면 오늘)
@@ -264,17 +269,34 @@ def render_preview(payload: dict, template: QuoteTemplate | None) -> str:
         return quote_export.preview_html(_legacy(q, ""), path, template.file_ext)
 
 
+def _domain(db: Session, user: User, vendor_id: int | None):
+    """견적서 도메인: 사용자에게 부여된 Thales·Ahnlab 도메인만."""
+    if vendor_id is None:
+        return None
+    vendor = next((v for v in accessible_vendors(db, user) if v.id == vendor_id), None)
+    if vendor is None or vendor.name.strip().lower() not in QUOTE_DOMAINS:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "부여된 견적서 도메인(Thales·Ahnlab)이 아닙니다.")
+    return vendor
+
+
 def _payload(db: Session, user: User, body: QuoteIn) -> tuple[dict, QuoteTemplate | None]:
     template = get_template(db, user, body.template_id) if body.template_id else None
+    vendor = _domain(db, user, body.vendor_id)
+
+    def check(doc_id: int, doc_type: str, label: str) -> None:
+        doc = get_readable_document(db, user, doc_id)
+        if doc.doc_type != doc_type:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, f"{label}(으)로 등록한 문서를 고르세요.")
+        if vendor is not None and doc.vendor_id != vendor.id:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, f"{vendor.name} 도메인의 {label} 문서를 고르세요.")
+
     if body.price_list_id:
-        doc = get_readable_document(db, user, body.price_list_id)
-        if doc.doc_type != "price_list":
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "제품 가격표로 등록한 문서를 고르세요.")
+        check(body.price_list_id, "price_list", "제품 가격표")
     for p in body.purchases:
-        doc = get_readable_document(db, user, p.document_id)
-        if doc.doc_type != "purchase":
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "매입 금액으로 등록한 문서를 고르세요.")
+        check(p.document_id, "purchase", "매입 금액")
     payload = {
+        "vendor_id": vendor.id if vendor else None,
+        "domain": vendor.name if vendor else None,
         "title": body.title.strip(),
         "recipient": body.recipient.strip(),
         "date": body.date or f"{utcnow():%Y-%m-%d}",
