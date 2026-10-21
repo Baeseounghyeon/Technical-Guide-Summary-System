@@ -52,6 +52,9 @@ def template_path():
     with storage.local_path(TEMPLATE_KEY) as path:
         yield path
 MEDIA_XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+# 견적서는 엑셀(양식 그대로)과 PDF 로 받는다
+FORMATS = ["xlsx", "pdf"]
+MEDIA = {"xlsx": MEDIA_XLSX, "pdf": "application/pdf"}
 
 
 @dataclass

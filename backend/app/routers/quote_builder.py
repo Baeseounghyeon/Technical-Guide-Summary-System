@@ -3,7 +3,8 @@
 1 견적서 양식 선택 → 2 제품 가격표 선택(참고용) → 3 가격표 항목 체크 → 4 매입 견적 PDF 선택(여러 건) → 5 매입 라인 확인·수정
 → 6 작성자 정보(로그인한 사용자) → 7 최종 확인(수신처·프로젝트명·환율·목표 금액)·미리보기 → 생성(엑셀·PDF).
 견적서 한 행 = 매입 견적 PDF 한 건. 기본 양식은 유니포인트 견적서 엑셀(services/unipoint_quote.py).
-견적서 양식(Word·Excel)은 '가져오기 > 견적서 양식'에서 따로 등록·변경할 수 있다 (자리 표시를 채운다).
+견적서 양식은 '가져오기 > 견적서 양식'에서 등록·변경한다. 유니포인트 견적서 모양의 엑셀만 받는다
+('Product Number' 머리글 ~ '- 이하여백 -' 품목 표와 제안가 합계가 있어야 표 안에 채울 수 있다).
 """
 
 from pathlib import Path
@@ -17,7 +18,6 @@ from ..db import get_db
 from ..deps import accessible_vendors, get_active_user, get_readable_document, is_admin, require_permission
 from ..models import GeneratedDocument, QuoteTemplate, User, utcnow
 from ..schemas import UTCDateTime
-from ..services.exporters import quote_export
 from ..services import unipoint_quote as uq
 from ..services.thales_pdf import PRICE_COLUMNS, parse_price_list, parse_purchase_quote
 from ..services.storage import get_storage
@@ -27,8 +27,9 @@ from .uploads import store_upload
 
 router = APIRouter(prefix="/api", tags=["견적서 생성"])
 
-TEMPLATE_EXTENSIONS = {".docx": "docx", ".xlsx": "xlsx"}
+TEMPLATE_EXTENSIONS = {".xlsx": "xlsx"}
 ITEM_SOURCES = {"price_list": "제품 가격표", "purchase": "매입 금액"}
+NOT_QUOTE_FORM = "견적서 양식은 'Product Number' 머리글과 '- 이하여백 -'가 있는 유니포인트 견적서 엑셀이어야 합니다."
 
 
 # ---------- 견적서 양식 ----------
@@ -71,7 +72,10 @@ def _store_template(file: UploadFile | None, storage_key: str | None, filename: 
     ref, name = stored
     ext = TEMPLATE_EXTENSIONS.get(Path(name).suffix.lower())
     if ext is None:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "견적서 양식은 Word(.docx) 또는 Excel(.xlsx) 파일만 올릴 수 있습니다.")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "견적서 양식은 Excel(.xlsx) 파일만 올릴 수 있습니다.")
+    with get_storage().local_path(ref) as path:
+        if not uq.is_quote_form(path):
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, NOT_QUOTE_FORM)
     return ref, name, ext
 
 
@@ -227,46 +231,36 @@ def quote_doc(payload: dict, date: str | None = None) -> uq.QuoteDoc:
     )
 
 
-def _legacy(q: uq.QuoteDoc, version: str) -> quote_export.QuoteData:
-    """직접 올린 양식(Word·Excel 자리 표시)용 데이터. 품목 표는 {{품목표}} 자리에 들어간다."""
-    cols = ["순번", "Product Number", "Product Name", "Product Description", "수량", "단위", "금액", "공급가", "할인율", "비고"]
-    rows = [
-        [str(l["no"]), l["product_number"], l["product_name"], l["description"], str(l["quantity"]), l["unit"],
-         f"{l['amount']:,.0f}", f"{l['supply']:,.0f}", f"{l['discount'] * 100:.1f}%", l["note"]]
-        for l in q.lines
-    ]
-    author = {**q.author, "company": q.author.get("company", "")}
-    return quote_export.QuoteData(
-        title=q.project, author=author, tables=[quote_export.ItemTable("견적 품목", cols, rows)], date=q.date, version=version
-    )
-
-
 def formats_for(template: QuoteTemplate | None) -> list[str]:
-    return [template.file_ext, "pdf"] if template else ["xlsx", "pdf"]
+    return uq.FORMATS
 
 
-def render(payload: dict, template: QuoteTemplate | None, fmt: str, *, version: str = "", date: str | None = None) -> bytes:
-    """기본: 유니포인트 견적서 엑셀(+PDF). 올린 엑셀 양식이 같은 견적서 모양이면 그 표 안에 채우고,
-    그 밖의 올린 양식(Word·Excel)은 자리 표시({{작성자}}·{{품목표}} 등)를 채운다."""
+def _template_file(template: QuoteTemplate):
+    """고른 양식 파일. 예전에 올린 Word·다른 모양 엑셀 양식은 더 쓸 수 없다."""
+    if template.file_ext != "xlsx":
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"'{template.name}' 양식은 Word 양식이라 더 쓸 수 없습니다. {NOT_QUOTE_FORM}")
+    return get_storage().local_path(template.file_path)
+
+
+def render(payload: dict, template: QuoteTemplate | None, fmt: str, *, date: str | None = None) -> bytes:
+    """유니포인트 견적서 엑셀(+PDF). 양식을 골랐으면 그 양식의 품목 표 안에 채운다."""
     q = quote_doc(payload, date)
     if template is None:
         return uq.build_pdf(q) if fmt == "pdf" else uq.build_xlsx(q)[0]
-    with get_storage().local_path(template.file_path) as path:
-        if template.file_ext == "xlsx" and uq.is_quote_form(path):
-            return uq.build_pdf(q, path) if fmt == "pdf" else uq.build_xlsx(q, path)[0]
-        if fmt == "pdf":
-            return uq.build_pdf(q)
-        return quote_export.build_quote(_legacy(q, version), fmt, path, template.file_ext)
+    with _template_file(template) as path:
+        if not uq.is_quote_form(path):
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, f"'{template.name}' 양식은 {NOT_QUOTE_FORM}")
+        return uq.build_pdf(q, path) if fmt == "pdf" else uq.build_xlsx(q, path)[0]
 
 
 def render_preview(payload: dict, template: QuoteTemplate | None) -> str:
     q = quote_doc(payload)
     if template is None:
         return uq.preview_html(*uq.build_xlsx(q))
-    with get_storage().local_path(template.file_path) as path:
-        if template.file_ext == "xlsx" and uq.is_quote_form(path):
-            return uq.preview_html(*uq.build_xlsx(q, path))
-        return quote_export.preview_html(_legacy(q, ""), path, template.file_ext)
+    with _template_file(template) as path:
+        if not uq.is_quote_form(path):
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, f"'{template.name}' 양식은 {NOT_QUOTE_FORM}")
+        return uq.preview_html(*uq.build_xlsx(q, path))
 
 
 def _domain(db: Session, user: User, vendor_id: int | None):

@@ -133,14 +133,21 @@ def test_quote_builder_steps(client, tmp_path: Path):
     sales = _sales(client, admin, "qb-sales@q.example.com", partner["id"])
     engineer = _signup_and_approve(client, admin, "qb-eng@q.example.com", partner["id"])
 
-    # 1. 견적서 양식 (Word·Excel 만, 영업만)
+    # 1. 견적서 양식: 유니포인트 견적서 모양의 엑셀만, 영업만 (Word·다른 모양 엑셀은 거절)
+    from app.services.unipoint_quote import TEMPLATE
+
+    def add_template(name: str, data: bytes, headers=sales):
+        return client.post("/api/quote-templates", data={"name": "견적 양식"}, files={"file": (name, data)}, headers=headers)
+
+    tpl = add_template("tpl.xlsx", TEMPLATE.read_bytes()).json()
+    assert tpl["file_ext"] == "xlsx"
     _template_docx(tmp_path / "tpl.docx")
-    with (tmp_path / "tpl.docx").open("rb") as f:
-        tpl = client.post("/api/quote-templates", data={"name": "기본 견적 양식"}, files={"file": ("tpl.docx", f)}, headers=sales).json()
-    with (tmp_path / "tpl.docx").open("rb") as f:
-        assert client.post("/api/quote-templates", data={"name": "x"}, files={"file": ("tpl.pdf", f)}, headers=sales).status_code == 400
-    with (tmp_path / "tpl.docx").open("rb") as f:
-        assert client.post("/api/quote-templates", data={"name": "x"}, files={"file": ("tpl.docx", f)}, headers=engineer).status_code == 403
+    assert add_template("tpl.docx", (tmp_path / "tpl.docx").read_bytes()).status_code == 400
+    assert add_template("tpl.pdf", b"%PDF-1.4").status_code == 400
+    _xlsx(tmp_path / "plain.xlsx", [("제목", "{{제목}}"), ("작성자", "{{작성자}}")])
+    r = add_template("plain.xlsx", (tmp_path / "plain.xlsx").read_bytes())
+    assert r.status_code == 400 and "Product Number" in r.json()["detail"]
+    assert add_template("tpl.xlsx", TEMPLATE.read_bytes(), engineer).status_code == 403
     assert client.put(f"/api/quote-templates/{tpl['id']}", data={"name": "견적 양식 v2"}, headers=sales).json()["name"] == "견적 양식 v2"
 
     def upload(path: Path, doc_type: str, title: str) -> dict:
@@ -251,11 +258,12 @@ def test_quote_builder_steps(client, tmp_path: Path):
     assert client.delete(f"/api/generated/{v2['id']}", headers=sales).status_code == 204
     assert [g["id"] for g in client.get("/api/generated?doc_type=quote", headers=sales).json()] == []
     q = client.post("/api/quote-builder", json=body, headers=sales).json()
-    # 직접 올린 Word 양식으로 만들면 Word·PDF
+    # 올린 엑셀 양식으로 만들면 그 양식의 표 안에 채워 엑셀·PDF (Word 로는 받지 않는다)
     v3 = client.post("/api/quote-builder", json={**body, "template_id": tpl["id"]}, headers=sales).json()
-    assert v3["formats"] == ["docx", "pdf"]
-    text = "\n".join(p.text for p in Document(io.BytesIO(client.get(f"/api/generated/{v3['id']}/download?format=docx", headers=sales).content)).paragraphs)
-    assert "견적서: [예시은행]" in text and "영업 담당" in text
+    assert v3["formats"] == ["xlsx", "pdf"]
+    ws = load_workbook(io.BytesIO(client.get(f"/api/generated/{v3['id']}/download?format=xlsx", headers=sales).content)).worksheets[0]
+    assert ws["B18"].value and ws["D22"].value == "- 이하여백 -"
+    assert client.get(f"/api/generated/{v3['id']}/download?format=docx", headers=sales).status_code == 400
 
 
 def test_quote_table_grows_only_when_needed():

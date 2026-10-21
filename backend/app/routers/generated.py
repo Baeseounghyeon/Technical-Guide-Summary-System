@@ -15,7 +15,7 @@ from ..db import get_db
 from ..deps import get_active_user, is_admin
 from ..models import GeneratedDocument, Guide, SourceDocument, User
 from ..schemas import UTCDateTime
-from ..services.exporters.quote_export import MEDIA
+from ..services.unipoint_quote import FORMATS, MEDIA
 
 router = APIRouter(prefix="/api", tags=["생성한 견적서"])
 
@@ -37,7 +37,7 @@ class GeneratedOut(BaseModel):
     doc_type: str
     title: str
     fields: dict  # 견적서: 양식·항목 표·작성자·계산 설정
-    formats: list[str] = ["pdf", "docx"]  # 받을 수 있는 형식
+    formats: list[str] = FORMATS  # 받을 수 있는 형식
     version: int
     root_id: int
     based_on_id: int | None
@@ -86,11 +86,7 @@ def _out(db: Session, g: GeneratedDocument) -> GeneratedOut:
 
 
 def _formats(g: GeneratedDocument) -> list[str]:
-    if g.doc_type == "quote":
-        from ..services.exporters.quote_export import formats_for
-
-        return formats_for((g.fields or {}).get("template_ext"))
-    return ["pdf", "docx"]
+    return FORMATS if g.doc_type == "quote" else []
 
 
 def _get_generated(db: Session, user: User, generated_id: int) -> GeneratedDocument:
@@ -154,13 +150,13 @@ def download_generated(
 
 
 def _quote_file(db: Session, user: User, g: GeneratedDocument, fmt: str, meta: list) -> bytes:
-    """견적서 파일: 양식과 같은 형식이면 양식을 채우고, 아니면 기본 양식. 양식이 지워졌으면 기본 양식."""
+    """견적서 파일: 고른 양식(유니포인트 견적서 모양 엑셀)의 표 안에 채운다. 양식이 지워졌으면 기본 양식."""
     from ..models import QuoteTemplate
     from .quote_builder import render
 
     fields = g.fields or {}
     template = db.get(QuoteTemplate, fields["template_id"]) if fields.get("template_id") else None
-    return render(fields, template, fmt, version=f"v{g.version}")
+    return render(fields, template, fmt)
 
 
 # ---------- 생성한 가이드 (요약 가이드) ----------

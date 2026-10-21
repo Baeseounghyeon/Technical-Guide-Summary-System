@@ -179,7 +179,7 @@ cd backend; .\.venv\Scripts\python -m app.migrate_to_postgres
     회사명(B1)·주소(J1)·연락처(J2)·담당자 줄(B2)은 6단계 작성자 정보로 채운다(회사 정보는 브라우저에 기억).
   - 기본 양식 엑셀은 공개 저장소에 넣지 않고 앱 저장소(Supabase, 비공개)의 `assets/quote_unipoint.xlsx` 를 쓴다
     (개발 PC 는 git 에서 뺀 `backend/app/assets/quote_unipoint.xlsx`). 양식을 바꾸려면 이 파일을 바꿔 같은 키로 다시 올린다.
-  - 직접 올린 양식(Word·Excel)을 고르면 `{{제목}}` `{{작성자}}` 등 자리 표시와 `{{품목표}}` 를 채운다(PDF 는 기본 배치).
+  - 견적서 양식은 유니포인트 견적서 모양의 엑셀(.xlsx)만 받는다(올릴 때 'Product Number' 머리글·'- 이하여백 -' 검사). Word 양식 자리 표시 채우기는 2026-10-21 삭제.
 - 생성한 견적서(/quotes/created): 견적서별 최신 버전, 엑셀·PDF 받기, 삭제(같은 이력의 모든 버전, `generated_documents.root_id`).
 - 가이드 생성(/guides/create): 등록한 가이드 문서를 골라 요약 가이드 만들기로 이동. 생성한 가이드(/guides/created): 만든 요약 가이드와 최종 문서(Word·PowerPoint) 이력.
 

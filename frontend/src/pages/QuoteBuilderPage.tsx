@@ -497,7 +497,7 @@ function QuoteBuilder({ domain, tabs }: { domain: QuoteDomain; tabs: ReactNode }
 
         {step === 1 && (
           <p>
-            선택한 양식: <strong>{template ? `${template.name} (${template.file_ext === "docx" ? "Word" : "Excel"})` : "기본 양식 (유니포인트 견적서)"}</strong>
+            선택한 양식: <strong>{template ? template.name : "기본 양식 (유니포인트 견적서)"}</strong>
           </p>
         )}
         {step === 2 && (
@@ -653,7 +653,7 @@ function TemplatesPanel({ selected, onPick }: { selected: number | null; onPick:
                       <UploadIcon />
                       <input
                         type="file"
-                        accept=".docx,.xlsx"
+                        accept=".xlsx"
                         hidden
                         onChange={(e) => {
                           const f = e.target.files?.[0];
@@ -684,8 +684,8 @@ function TemplatesPanel({ selected, onPick }: { selected: number | null; onPick:
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="비우면 파일 이름" />
         </label>
         <label>
-          양식 파일 (Word .docx · Excel .xlsx)
-          <input key={inputKey} type="file" accept=".docx,.xlsx" onChange={(e) => setFile(e.target.files?.[0] ?? null)} required />
+          양식 파일 (Excel .xlsx · 유니포인트 견적서 모양)
+          <input key={inputKey} type="file" accept=".xlsx" onChange={(e) => setFile(e.target.files?.[0] ?? null)} required />
         </label>
         <div><button className="primary" disabled={add.isPending || !file}>{add.isPending ? "올리는 중…" : "양식 등록"}</button></div>
       </form>
