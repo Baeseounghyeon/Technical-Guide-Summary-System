@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { useAuth } from "../auth";
@@ -23,25 +23,19 @@ interface UserShare {
   created_at: string;
 }
 
-/** 가이드 공유: 상단 '가이드 공유' 버튼으로 가이드 → 조직 → 사용자를 골라 공유한다.
- *  조직과 사용자를 모두 골라야 공유되며, 고른 사용자만 도메인 권한 요청 없이 그 가이드를 보고 내려받는다. */
-export default function GuideSharePage() {
-  const [params, setParams] = useSearchParams();
-  const tab = params.get("tab") === "received" ? "received" : "mine";
+/** 가이드 공유: '가이드 공유하기'로 가이드 → 조직 → 사용자를 골라 공유한다 (승인 없이 바로).
+ *  고른 사용자만 도메인 열람 신청 없이 그 가이드를 보고 내려받는다. */
+export function GuideSharePanel() {
+  const { me } = useAuth();
+  const canShare = me?.role === "platform_admin" || !!me?.permissions.includes("guide");
+  const [tab, setTab] = useState<"mine" | "received">(canShare ? "mine" : "received");
   const [sharing, setSharing] = useState(false);
   return (
     <>
-      <div className="page-header">
-        <h1>가이드 공유</h1>
-        <p className="muted">
-          내가 등록한 가이드를 다른 조직의 사용자에게 공유합니다. 조직을 고른 뒤 그 조직의 사용자까지 골라야 공유되며, 공유받은 사용자는 도메인 권한 요청 없이
-          그 가이드를 보고 내려받을 수 있습니다.
-        </p>
-      </div>
       <div className="filters">
-        <button className={tab === "mine" ? "active" : ""} onClick={() => setParams({})}>공유한 가이드</button>
-        <button className={tab === "received" ? "active" : ""} onClick={() => setParams({ tab: "received" })}>공유받은 가이드</button>
-        <button className="share-open" onClick={() => setSharing(true)}>가이드 공유</button>
+        {canShare && <button className={tab === "mine" ? "active" : ""} onClick={() => setTab("mine")}>공유한 가이드</button>}
+        <button className={tab === "received" ? "active" : ""} onClick={() => setTab("received")}>공유받은 가이드</button>
+        {canShare && <button className="share-open" onClick={() => setSharing(true)}>가이드 공유하기</button>}
       </div>
       {tab === "mine" ? <MyShares /> : (
         <section className="card">
@@ -54,7 +48,7 @@ export default function GuideSharePage() {
           onClose={() => setSharing(false)}
           onShared={() => {
             setSharing(false);
-            setParams({});
+            setTab("mine");
           }}
         />
       )}
@@ -79,7 +73,7 @@ function MyShares() {
       {shares.isLoading && <p className="muted">불러오는 중…</p>}
       {shares.error && <p className="error">{shares.error.message}</p>}
       {remove.error && <p className="error">{remove.error.message}</p>}
-      {shares.data?.length === 0 && <p className="muted">아직 공유한 가이드가 없습니다. 위의 '가이드 공유' 버튼으로 공유하세요.</p>}
+      {shares.data?.length === 0 && <p className="muted">아직 공유한 가이드가 없습니다. 위의 '가이드 공유하기' 버튼으로 공유하세요.</p>}
       {!!shares.data?.length && (
         <div className="table-wrap">
           <table style={{ minWidth: 900 }}>

@@ -1,9 +1,8 @@
 import { useState, type FormEvent } from "react";
-import { Navigate, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { useAuth } from "../auth";
-import type { AccessGrant, Domain } from "../types";
+import type { Domain } from "../types";
 import { DocumentTable } from "./DocumentsPage";
 
 
@@ -24,50 +23,10 @@ export function MyRequestsPage() {
   );
 }
 
-const GRANT_STATUS_LABELS: Record<string, string> = { pending: "승인 대기", approved: "승인", rejected: "반려", revoked: "회수" };
-
-/** 내가 보낸 도메인 권한 요청의 처리 결과 (도메인 권한 요청 화면 아래에 보여 준다). */
-function MyDomainRequests() {
-  const grants = useQuery({ queryKey: ["access-requests", "mine"], queryFn: () => api<AccessGrant[]>("/community/access-requests/mine") });
-  return (
-    <>
-      <section className="card">
-        <h2 className="section-title">내 도메인 권한 요청 결과</h2>
-        {grants.isLoading && <p className="muted">불러오는 중…</p>}
-        {grants.error && <p className="error">{grants.error.message}</p>}
-        {grants.data?.length === 0 && <p className="muted">아직 요청한 도메인 권한이 없습니다.</p>}
-        {!!grants.data?.length && (
-          <div className="table-wrap">
-            <table style={{ minWidth: 760 }}>
-              <thead>
-                <tr><th>도메인(벤더)</th><th>요청 목적</th><th>요청 일자</th><th>신청일</th><th>결과</th><th>열람 기간</th><th>관리자 메모</th></tr>
-              </thead>
-              <tbody>
-                {grants.data.map((g) => (
-                  <tr key={g.id}>
-                    <td>{g.vendor_name}</td>
-                    <td>{g.reason}</td>
-                    <td>{g.request_date ?? "-"}</td>
-                    <td>{new Date(g.created_at).toLocaleDateString()}</td>
-                    <td><span className={`badge ${g.status === "approved" ? "done" : g.status === "pending" ? "pending" : "failed"}`}>{GRANT_STATUS_LABELS[g.status]}</span></td>
-                    <td>{g.status !== "approved" ? "-" : g.grant_type === "member" ? "정식 소속" : g.expires_at ? `~ ${new Date(g.expires_at).toLocaleDateString()}` : "-"}</td>
-                    <td>{g.decision_note ?? <span className="muted">-</span>}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-    </>
-  );
-}
-
-/** 도메인 권한 요청: 다른 파트너사 문서까지 볼 수 있도록 관리자에게 벤더 도메인 열람을 요청한다.
+/** 도메인 열람 신청 양식: 다른 벤더 도메인 문서까지 볼 수 있도록 관리자에게 열람을 요청한다.
  *  이름·메일·회사명은 가입 정보로 미리 채우고 고칠 수 있다. */
-export function DomainRequestPage() {
+export function DomainRequestForm() {
   const { me } = useAuth();
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const domains = useQuery({ queryKey: ["community", "domains"], queryFn: () => api<Domain[]>("/community/domains") });
   const today = new Date();
@@ -89,10 +48,9 @@ export function DomainRequestPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["access-requests"] });
       queryClient.invalidateQueries({ queryKey: ["community"] });
-      navigate("/requests/domain");
+      setForm((f) => ({ ...f, vendor_id: "", reason: "" }));
     },
   });
-  if (me?.role === "platform_admin") return <Navigate to="/admin#access-requests" replace />;
   // 이미 소속이거나 열람 중인 도메인, 대기 중인 요청이 있는 도메인은 고를 수 없다.
   const options = (domains.data ?? []).filter((d) => d.access === "none");
   const submit = (e: FormEvent) => {
@@ -100,11 +58,6 @@ export function DomainRequestPage() {
     send.mutate();
   };
   return (
-    <>
-      <div className="page-header">
-        <h1>도메인 권한 요청</h1>
-        <p className="muted">다른 벤더 도메인의 문서(다른 파트너사가 올린 문서 포함)를 열람하려면 관리자 승인이 필요합니다. 승인 결과는 아래 표에서 봅니다.</p>
-      </div>
       <section className="card">
         <form className="form" onSubmit={submit}>
           <div className="form-row">
@@ -131,7 +84,5 @@ export function DomainRequestPage() {
           <div><button className="primary" disabled={send.isPending}>{send.isPending ? "보내는 중…" : "권한 요청 보내기"}</button></div>
         </form>
       </section>
-      <MyDomainRequests />
-    </>
   );
 }

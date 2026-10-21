@@ -472,3 +472,15 @@ a.stat-card { text-decoration: none; }
 .add-user-fields input, .add-user-fields select { width: 100%; font-weight: 400; }
 @media (max-width: 1000px) { .add-user-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 560px) { .add-user-fields { grid-template-columns: 1fr; } }
+
+/* 요청 > 권한 신청: 신청 종류 고르기 */
+.kind-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 18px; }
+.kind-card { display: flex; flex-direction: column; gap: 6px; text-align: left; padding: 14px 16px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface, #fff); color: inherit; cursor: pointer; min-width: 0; }
+.kind-card:hover { border-color: var(--accent); }
+.kind-card.active { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.kind-card strong { font-size: 15px; }
+.kind-desc { font-size: 13px; line-height: 1.5; color: var(--muted, #5f6878); }
+.kind-approver { margin-top: auto; font-size: 12px; font-weight: 600; color: var(--accent); }
+.approval-list { display: flex; flex-direction: column; gap: 16px; }
+@media (max-width: 1000px) { .kind-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .kind-grid { grid-template-columns: 1fr; } }

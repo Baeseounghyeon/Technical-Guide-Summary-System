@@ -1,11 +1,10 @@
 import { useState, type FormEvent, type ReactNode } from "react";
-import { Navigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { TRACK_LABELS } from "../labels";
 
-interface PermissionRequest {
+export interface PermissionRequest {
   id: number;
   user_id: number;
   user_track: string | null;
@@ -31,11 +30,11 @@ const SCOPES = [
   { key: "price_list", label: "제품 가격표 등록", detail: "제품 가격표 문서 등록 (견적서 생성의 가격표 항목)" },
   { key: "purchase", label: "매입 금액 등록", detail: "매입 금액 문서 등록 (견적서 생성의 매입 항목)" },
 ];
-const STATUS_LABELS: Record<string, string> = { pending: "승인 대기", approved: "승인", rejected: "반려", revoked: "회수" };
-const STATUS_BADGE: Record<string, string> = { pending: "pending", approved: "done", rejected: "failed", revoked: "failed" };
+export const STATUS_LABELS: Record<string, string> = { pending: "승인 대기", approved: "승인", rejected: "반려", revoked: "회수" };
+export const STATUS_BADGE: Record<string, string> = { pending: "pending", approved: "done", rejected: "failed", revoked: "failed" };
 
-/** 권한 승인 요청: 내 업무 구분 밖의 권한(예: 영업이 가이드 등록·요약)을 관리자에게 신청한다. */
-export function PermissionRequestPage() {
+/** 기능 권한 신청 양식: 내 업무 구분 밖의 권한(예: 영업이 가이드 등록·요약)을 관리자에게 신청한다. */
+export function PermissionRequestForm() {
   const { me } = useAuth();
   const queryClient = useQueryClient();
   const mine = useQuery({ queryKey: ["permission-requests", "mine"], queryFn: () => api<PermissionRequest[]>("/permission-requests/mine") });
@@ -55,8 +54,6 @@ export function PermissionRequestPage() {
       queryClient.invalidateQueries({ queryKey: ["permission-requests"] });
     },
   });
-  if (me?.role === "platform_admin") return <Navigate to="/admin#permission-requests" replace />;
-
   const have = new Set(me?.permissions ?? []);
   const pending = mine.data?.some((r) => r.status === "pending");
   const set = (key: keyof typeof form) => (e: { target: { value: string } }) => setForm((f) => ({ ...f, [key]: e.target.value }));
@@ -73,15 +70,8 @@ export function PermissionRequestPage() {
   };
 
   return (
-    <>
-      <div className="page-header">
-        <h1>권한 승인 요청</h1>
-        <p className="muted">
-          지금 업무 구분({TRACK_LABELS[me?.track ?? "engineer"]})에 없는 권한을 관리자에게 신청합니다. 예를 들어 영업 담당이 엔지니어의 가이드 등록·요약을
-          함께 하려면 '가이드 등록·요약'을 신청하세요.
-        </p>
-      </div>
-      <section className="card">
+    <section className="card">
+        <p className="muted" style={{ marginTop: 0 }}>지금 업무 구분: {TRACK_LABELS[me?.track ?? "engineer"]}. 이미 가진 권한은 '보유'로 표시됩니다.</p>
         <form className="form" onSubmit={submit}>
           <div>
             <strong>신청할 권한 범위</strong>
@@ -118,19 +108,14 @@ export function PermissionRequestPage() {
           {pending && <p className="muted">승인 대기 중인 요청이 있어 처리된 뒤에 다시 신청할 수 있습니다.</p>}
           {send.error && <p className="error">{send.error.message}</p>}
           <div>
-            <button className="primary" disabled={send.isPending || scopes.size === 0 || pending}>{send.isPending ? "보내는 중…" : "권한 승인 요청 보내기"}</button>
+            <button className="primary" disabled={send.isPending || scopes.size === 0 || pending}>{send.isPending ? "보내는 중…" : "기능 권한 신청 보내기"}</button>
           </div>
         </form>
-      </section>
-      <section className="card">
-        <h2 className="section-title">내 권한 요청</h2>
-        <RequestTable rows={mine.data} loading={mine.isLoading} showRequester={false} />
-      </section>
-    </>
+    </section>
   );
 }
 
-/** 관리자: 권한 승인 요청 승인·반려 (승인한 것은 회수 가능). */
+/** 관리자: 기능 권한 신청 승인·반려 (승인한 것은 회수 가능). '요청 > 승인 처리'에서 쓴다. */
 export function AdminPermissionRequests() {
   const queryClient = useQueryClient();
   const [showAll, setShowAll] = useState(false);
@@ -142,13 +127,16 @@ export function AdminPermissionRequests() {
   const decide = useMutation({
     mutationFn: ({ id, approve }: { id: number; approve: boolean }) =>
       api(`/admin/permission-requests/${id}/decision`, { method: "POST", json: { approve, note: notes[id] ?? "" } }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin"] });
+      queryClient.invalidateQueries({ queryKey: ["approvals"] });
+    },
   });
   const pendingCount = rows.data?.filter((r) => r.status === "pending").length ?? 0;
   return (
     <section className="card" id="permission-requests" style={{ scrollMarginTop: 80 }}>
       <div className="summary-head">
-        <h2 style={{ margin: 0 }}>권한 승인 요청 처리</h2>
+        <h2 style={{ margin: 0 }}>기능 권한</h2>
         {pendingCount > 0 && <span className="badge pending">대기 {pendingCount}건</span>}
       </div>
       <label className="check" style={{ margin: "8px 0" }}>

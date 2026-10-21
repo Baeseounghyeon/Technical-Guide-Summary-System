@@ -122,7 +122,7 @@ def request_download(
                 kind="download_request",
                 title=f"{user.partner.name} {user.name}님이 가이드 다운로드를 요청했습니다",
                 body=f"{title}" + (f"\n요청 사유: {req.message}" if req.message else ""),
-                link="/shared?tab=incoming",
+                link="/requests/approvals?kind=download",
                 related_id=req.id,
             )
         )
@@ -173,7 +173,7 @@ def decide_request(
             kind="download_decision",
             title=f"{req.owner_partner.name}이(가) 다운로드 요청을 {result}했습니다",
             body=title + (f"\n메모: {req.decision_note}" if req.decision_note else ""),
-            link="/shared",
+            link="/requests/apply?kind=download",
             related_id=req.id,
         )
     )

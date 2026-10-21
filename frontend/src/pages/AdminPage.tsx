@@ -1,10 +1,10 @@
 import { Fragment, useState, type FormEvent } from "react";
+import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { GRANT_STATUS, ROLE_LABELS, TRACK_LABELS } from "../labels";
 import { EditIcon, TrashIcon } from "./DocumentsPage";
-import { AdminPermissionRequests } from "./PermissionPages";
 import type { AccessGrant, AdminUser, Partner, PartnerUsage, Role, Track, UsageOverview, Vendor } from "../types";
 
 export default function AdminPage() {
@@ -12,12 +12,13 @@ export default function AdminPage() {
     <>
       <div className="page-header">
         <h1>관리자</h1>
-        <p className="muted">사용자 추가, 가입자 승인·수정·삭제, AI 사용량과 회사별 한도, 다른 도메인 권한 신청, 파트너사와 벤더 도메인을 관리합니다.</p>
+        <p className="muted">
+          사용자 추가, 가입자 승인·수정·삭제, AI 사용량과 회사별 한도, 파트너사와 벤더 도메인을 관리합니다. 기능 권한·도메인 열람·가이드 받기 신청은{" "}
+          <Link to="/requests/approvals">요청 &gt; 승인 처리</Link>에서 승인합니다.
+        </p>
       </div>
       <Members />
-      <AdminPermissionRequests />
       <AiUsage />
-      <AccessRequests />
       <PartnersAndVendors />
     </>
   );
@@ -189,7 +190,8 @@ function Members() {
 
 const USER_STATUS: Record<string, string> = { active: "사용 중", pending: "승인 대기", suspended: "정지" };
 
-function AccessRequests() {
+/** 도메인 열람 신청 승인 (관리자). '요청 > 승인 처리' 화면에서 쓴다. */
+export function AccessRequests() {
   const queryClient = useQueryClient();
   const [showAll, setShowAll] = useState(false);
   const requests = useQuery({
@@ -197,13 +199,16 @@ function AccessRequests() {
     queryFn: () => api<AccessGrant[]>(`/admin/access-requests${showAll ? "" : "?status=pending"}`),
   });
   // 정식 소속 승인·회수는 파트너사-도메인 표도 바꾸므로 관리자 화면 전체를 새로 고친다.
-  const refresh = () => queryClient.invalidateQueries({ queryKey: ["admin"] });
+  const refresh = () => {
+    queryClient.invalidateQueries({ queryKey: ["admin"] });
+    queryClient.invalidateQueries({ queryKey: ["approvals"] });
+  };
   const revoke = useMutation({ mutationFn: (id: number) => api(`/admin/access-requests/${id}/revoke`, { method: "POST" }), onSuccess: refresh });
 
   return (
     <section className="card" id="access-requests" style={{ scrollMarginTop: 80 }}>
       <div className="summary-head">
-        <h2 style={{ margin: 0 }}>도메인 권한 요청 승인</h2>
+        <h2 style={{ margin: 0 }}>도메인 열람</h2>
         <label className="check"><input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} />처리한 신청도 보기</label>
       </div>
       <p className="muted">

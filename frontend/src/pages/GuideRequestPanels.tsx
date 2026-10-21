@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, download } from "../api";
 import { useAuth } from "../auth";
@@ -13,37 +12,8 @@ const REQUEST_STATUS: Record<string, { label: string; badge: string }> = {
   rejected: { label: "거절됨", badge: "failed" },
 };
 
-type Tab = "guides" | "incoming" | "outgoing";
-
-export default function SharedPage() {
-  const [params, setParams] = useSearchParams();
-  const tab = (params.get("tab") as Tab) || "guides";
-  const tabs: [Tab, string][] = [["guides", "다른 파트너 가이드"], ["incoming", "받은 요청"], ["outgoing", "보낸 요청"]];
-
-  return (
-    <>
-      <div className="page-header">
-        <h1>가이드 공유</h1>
-        <p className="muted">
-          같은 벤더를 지원하는 다른 파트너사가 만든 가이드를 요청해 받을 수 있습니다. 소유 파트너사(파트너 관리자 또는 문서를 올린 사람)가 승인하면
-          우리 파트너사 사용자 모두가 내려받을 수 있습니다.
-        </p>
-      </div>
-      <div className="filters">
-        {tabs.map(([key, label]) => (
-          <button key={key} className={tab === key ? "active" : ""} onClick={() => setParams(key === "guides" ? {} : { tab: key })}>
-            {label}
-          </button>
-        ))}
-      </div>
-      {tab === "guides" && <GuidesTab />}
-      {tab === "incoming" && <RequestsTab kind="incoming" />}
-      {tab === "outgoing" && <RequestsTab kind="outgoing" />}
-    </>
-  );
-}
-
-function GuidesTab() {
+/** 가이드 받기: 같은 벤더의 다른 파트너사가 만든 가이드를 골라 다운로드를 요청한다. */
+export function SharedGuidesPanel() {
   const { me } = useAuth();
   const guides = useQuery({ queryKey: ["shared-guides"], queryFn: () => api<SharedGuide[]>("/shared-guides") });
 
@@ -52,7 +22,7 @@ function GuidesTab() {
   }
   return (
     <section className="card">
-      <h2>다른 파트너 가이드</h2>
+      <h2 className="section-title">다른 파트너사 가이드</h2>
       {guides.isLoading && <p className="muted">불러오는 중…</p>}
       {guides.data?.length === 0 && <p className="muted">같은 벤더 도메인에서 다른 파트너사가 최종 문서까지 만든 가이드가 아직 없습니다.</p>}
       {!!guides.data?.length && (
@@ -136,7 +106,8 @@ function SharedGuideRow({ guide: g }: { guide: SharedGuide }) {
   );
 }
 
-function RequestsTab({ kind }: { kind: "incoming" | "outgoing" }) {
+/** 가이드 받기 요청 표. incoming: 우리 가이드에 들어온 요청(승인 처리), outgoing: 우리 파트너사가 보낸 요청. */
+export function DownloadRequestsPanel({ kind }: { kind: "incoming" | "outgoing" }) {
   const requests = useQuery({
     queryKey: ["download-requests", kind],
     queryFn: () => api<DownloadRequest[]>(`/download-requests/${kind}`),
@@ -144,8 +115,8 @@ function RequestsTab({ kind }: { kind: "incoming" | "outgoing" }) {
 
   return (
     <section className="card">
-      <h2>{kind === "incoming" ? "우리 가이드에 들어온 요청" : "우리 파트너사가 보낸 요청"}</h2>
-      {kind === "incoming" && <p className="muted">파트너 관리자와 그 문서를 올린 사람만 승인할 수 있습니다.</p>}
+      <h2 style={{ margin: "0 0 4px" }}>{kind === "incoming" ? "가이드 받기" : "우리 파트너사가 보낸 요청"}</h2>
+      {kind === "incoming" && <p className="muted">다른 파트너사가 우리 가이드를 받겠다고 보낸 요청입니다. 파트너 관리자와 그 문서를 올린 사람이 승인합니다.</p>}
       {requests.data?.length === 0 && <p className="muted">요청이 없습니다.</p>}
       {!!requests.data?.length && (
         <div className="table-wrap">
@@ -173,6 +144,7 @@ function RequestRow({ req: r, kind }: { req: DownloadRequest; kind: "incoming" |
     mutationFn: (approve: boolean) => api(`/download-requests/${r.id}/decision`, { method: "POST", json: { approve, note } }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["download-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["approvals"] });
       queryClient.invalidateQueries({ queryKey: ["notifications"] });
     },
   });

@@ -17,16 +17,14 @@ import GuidesPage, { OrgTypePage, RegisteredTypePage } from "./pages/GuidesPage"
 import LoginPage from "./pages/LoginPage";
 import PartnerGuidePage from "./pages/PartnerGuidePage";
 import QuotesPage from "./pages/QuotesPage";
-import { DomainRequestPage, MyRequestsPage } from "./pages/RequestsPages";
-import { PermissionRequestPage } from "./pages/PermissionPages";
-import GuideSharePage from "./pages/GuideSharePage";
+import { MyRequestsPage } from "./pages/RequestsPages";
+import { ApplyPage, ApprovalsPage } from "./pages/RequestCenterPages";
 import { CreatedGuidesPage, GeneratedListPage, GuideCreatePage } from "./pages/GeneratePages";
 import QuoteBuilderPage from "./pages/QuoteBuilderPage";
 import HomeDetailPage from "./pages/HomeDetailPage";
 import TrashPage from "./pages/TrashPage";
 import NotificationBell from "./NotificationBell";
 import SettingsPage from "./pages/SettingsPage";
-import SharedPage from "./pages/SharedPage";
 import SignupPage from "./pages/SignupPage";
 import type { Role } from "./types";
 
@@ -42,8 +40,10 @@ export default function App() {
       <Route path="/documents/registered" element={<Protected><RegisteredDocumentsPage /></Protected>} />
       <Route path="/my-requests" element={<Navigate to="/requests" replace />} />
       <Route path="/requests" element={<Protected><MyRequestsPage /></Protected>} />
-      <Route path="/requests/approvals" element={<Protected><PermissionRequestPage /></Protected>} />
-      <Route path="/requests/domain" element={<Protected><DomainRequestPage /></Protected>} />
+      <Route path="/requests/apply" element={<Protected><ApplyPage /></Protected>} />
+      <Route path="/requests/approvals" element={<Protected><ApprovalsPage /></Protected>} />
+      {/* 예전 주소: 권한 신청·승인 처리로 합쳤다 */}
+      <Route path="/requests/domain" element={<Navigate to="/requests/apply?kind=domain" replace />} />
       <Route path="/specs" element={<Protected><RegisteredTypePage key="spec" docType="spec" /></Protected>} />
       <Route path="/specs/org" element={<Protected><OrgTypePage key="spec-org" docType="spec" /></Protected>} />
       <Route path="/brochures" element={<Protected><RegisteredTypePage key="brochure" docType="brochure" /></Protected>} />
@@ -51,12 +51,12 @@ export default function App() {
       <Route path="/documents/:id" element={<Protected><DocumentPage /></Protected>} />
       <Route path="/guides" element={<Protected><GuidesPage /></Protected>} />
       <Route path="/guides/org" element={<Protected><OrgTypePage key="guide-org" docType="guide" /></Protected>} />
-      <Route path="/guides/share" element={<Protected><GuideSharePage /></Protected>} />
+      <Route path="/guides/share" element={<Navigate to="/requests/apply?kind=share" replace />} />
       <Route path="/guides/create" element={<Protected perm="guide"><GuideCreatePage /></Protected>} />
       <Route path="/guides/created" element={<Protected perm="guide"><CreatedGuidesPage /></Protected>} />
       <Route path="/guides/:id" element={<Protected><GuidePage /></Protected>} />
       <Route path="/partner-guides/:id" element={<Protected><PartnerGuidePage /></Protected>} />
-      <Route path="/shared" element={<Protected><SharedPage /></Protected>} />
+      <Route path="/shared" element={<SharedRedirect />} />
       <Route path="/quotes" element={<Protected><RegisteredTypePage key="quote" docType="quote" /></Protected>} />
       <Route path="/quotes/org" element={<Protected><OrgTypePage key="quote-org" docType="quote" /></Protected>} />
       <Route path="/quotes/work" element={<Protected><QuotesPage /></Protected>} />
@@ -73,6 +73,12 @@ export default function App() {
 }
 
 const SETTINGS_ROLES: Role[] = ["platform_admin", "partner_admin"];
+
+/** 예전 가이드 받기 화면(/shared): 받은 요청은 승인 처리로, 나머지는 권한 신청 > 가이드 받기로. */
+function SharedRedirect() {
+  const { search } = useLocation();
+  return <Navigate to={search.includes("incoming") ? "/requests/approvals?kind=download" : "/requests/apply?kind=download"} replace />;
+}
 
 /** perm: 그 권한(업무 구분 기본 + 승인된 권한)이 없으면 홈으로 보낸다. 예) 규격서·견적서 생성은 영업, 가이드 생성은 엔지니어. */
 function Protected({ children, roles, sales, perm }: { children: ReactNode; roles?: Role[]; sales?: boolean; perm?: string }) {
@@ -101,7 +107,7 @@ function Protected({ children, roles, sales, perm }: { children: ReactNode; role
           <GuidesMenu canEdit={can("guide")} />
           <TypeMenu base="/quotes" label="견적서" canEdit={can("quote")} create />
           <NavLink to="/community">커뮤니티</NavLink>
-          <RequestsMenu isAdmin={isAdmin} />
+          <RequestsMenu canApprove={isAdmin || me.role === "partner_admin" || can("guide")} />
           {SETTINGS_ROLES.includes(me.role) && (!isSales || isAdmin) && <NavLink to="/settings">설정</NavLink>}
           {me.role === "platform_admin" && <NavLink to="/admin">관리자</NavLink>}
         </nav>
@@ -166,18 +172,18 @@ function GuidesMenu({ canEdit }: { canEdit: boolean }) {
     { key: "registered", label: canEdit ? "등록한 가이드" : "등록된 가이드", to: "/guides", active: pathname === "/guides" },
     { key: "org", label: "조직 요청 가이드", to: "/guides/org", active: pathname === "/guides/org" },
     ...(canEdit ? [{ key: "created", label: "생성한 가이드", to: "/guides/created", active: pathname === "/guides/created" }] : []),
-    ...(canEdit ? [{ key: "share", label: "가이드 공유", to: "/guides/share", active: pathname === "/guides/share" }] : []),
   ];
-  return <HoverMenu to="/guides" label="가이드" items={items} alsoActive={pathname === "/shared"} />;
+  return <HoverMenu to="/guides" label="가이드" items={items} />;
 }
 
-/** 상단 '요청' 메뉴: 누르면 작업 내역, 마우스를 올리면 작업 내역·권한 승인 요청·도메인 권한 요청(일반 사용자). */
-function RequestsMenu({ isAdmin }: { isAdmin: boolean }) {
+/** 상단 '요청' 메뉴: 누르면 작업 내역, 마우스를 올리면 작업 내역·권한 신청(기능 권한·도메인 열람·가이드 받기·가이드 공유)·승인 처리.
+ *  승인 처리는 승인할 수 있는 사람(관리자, 파트너 관리자, 가이드를 올리는 사람)에게만 보인다. */
+function RequestsMenu({ canApprove }: { canApprove: boolean }) {
   const { pathname } = useLocation();
   const items = [
     { key: "mine", label: "작업 내역", to: "/requests", active: pathname === "/requests" },
-    { key: "approvals", label: "권한 승인 요청", to: isAdmin ? "/admin#permission-requests" : "/requests/approvals", active: pathname === "/requests/approvals" },
-    ...(isAdmin ? [] : [{ key: "domain", label: "도메인 권한 요청", to: "/requests/domain", active: pathname === "/requests/domain" }]),
+    { key: "apply", label: "권한 신청", to: "/requests/apply", active: pathname === "/requests/apply" },
+    ...(canApprove ? [{ key: "approvals", label: "승인 처리", to: "/requests/approvals", active: pathname === "/requests/approvals" }] : []),
   ];
   return <HoverMenu to="/requests" label="요청" items={items} />;
 }
@@ -309,9 +315,7 @@ function UserMenu() {
           )}
           <button className="dropdown-item" role="menuitem" onClick={() => go("/requests")}>작업 내역</button>
           <button className="dropdown-item" role="menuitem" onClick={() => go("/trash")}>휴지통</button>
-          {me.role !== "platform_admin" && (
-            <button className="dropdown-item" role="menuitem" onClick={() => go("/requests/domain")}>도메인 권한 요청</button>
-          )}
+          <button className="dropdown-item" role="menuitem" onClick={() => go("/requests/apply")}>권한 신청</button>
           {me.role === "platform_admin" && (
             <button className="dropdown-item" role="menuitem" onClick={() => go("/admin")}>관리자 페이지</button>
           )}

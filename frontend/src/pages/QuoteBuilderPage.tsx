@@ -203,7 +203,7 @@ export default function QuoteBuilderPage() {
       <>
         <div className="page-header"><h1>견적서 생성</h1></div>
         <section className="card">
-          <p className="muted">견적서 생성은 Thales 또는 Ahnlab 도메인이 부여된 사용자만 쓸 수 있습니다. 도메인이 필요하면 <Link to="/requests/domain">도메인 권한 요청</Link>을 하세요.</p>
+          <p className="muted">견적서 생성은 Thales 또는 Ahnlab 도메인이 부여된 사용자만 쓸 수 있습니다. 도메인이 필요하면 <Link to="/requests/apply?kind=domain">요청 &gt; 권한 신청 &gt; 도메인 열람</Link>을 하세요.</p>
         </section>
       </>
     );
