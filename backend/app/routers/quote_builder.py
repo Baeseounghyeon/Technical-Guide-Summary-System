@@ -2,7 +2,7 @@
 
 1 견적서 양식 선택 → 2 제품 가격표 선택(참고용) → 3 가격표 항목 체크 → 4 매입 견적 PDF 선택(여러 건) → 5 매입 라인 확인·수정
 → 6 작성자 정보(로그인한 사용자) → 7 최종 확인(수신처·프로젝트명·환율·목표 금액)·미리보기 → 생성(엑셀·PDF).
-견적서 한 행 = 매입 견적 PDF 한 건. 기본 양식은 유니포인트 견적서 엑셀(services/unipoint_quote.py).
+견적서 한 행 = 매입 견적 PDF 한 건(services/unipoint_quote.py). 기본 양식은 없고, 올린 견적서 양식을 꼭 고른다.
 견적서 양식은 '가져오기 > 견적서 양식'에서 등록·변경한다. 유니포인트 견적서 모양의 엑셀만 받는다
 ('Product Number' 머리글 ~ '- 이하여백 -' 품목 표와 제안가 합계가 있어야 표 안에 채울 수 있다).
 """
@@ -242,11 +242,16 @@ def _template_file(template: QuoteTemplate):
     return get_storage().local_path(template.file_path)
 
 
-def render(payload: dict, template: QuoteTemplate | None, fmt: str, *, date: str | None = None) -> bytes:
-    """유니포인트 견적서 엑셀(+PDF). 양식을 골랐으면 그 양식의 품목 표 안에 채운다."""
-    q = quote_doc(payload, date)
+def _require(template: QuoteTemplate | None) -> QuoteTemplate:
     if template is None:
-        return uq.build_pdf(q) if fmt == "pdf" else uq.build_xlsx(q)[0]
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "견적서 양식을 고르세요. '가져오기 > 견적서 양식'에서 올린 엑셀 양식으로 만듭니다.")
+    return template
+
+
+def render(payload: dict, template: QuoteTemplate | None, fmt: str, *, date: str | None = None) -> bytes:
+    """고른 견적서 양식(유니포인트 견적서 모양 엑셀)의 품목 표 안에 채운 엑셀(+PDF)."""
+    q = quote_doc(payload, date)
+    template = _require(template)
     with _template_file(template) as path:
         if not uq.is_quote_form(path):
             raise HTTPException(status.HTTP_400_BAD_REQUEST, f"'{template.name}' 양식은 {NOT_QUOTE_FORM}")
@@ -255,8 +260,7 @@ def render(payload: dict, template: QuoteTemplate | None, fmt: str, *, date: str
 
 def render_preview(payload: dict, template: QuoteTemplate | None) -> str:
     q = quote_doc(payload)
-    if template is None:
-        return uq.preview_html(*uq.build_xlsx(q))
+    template = _require(template)
     with _template_file(template) as path:
         if not uq.is_quote_form(path):
             raise HTTPException(status.HTTP_400_BAD_REQUEST, f"'{template.name}' 양식은 {NOT_QUOTE_FORM}")

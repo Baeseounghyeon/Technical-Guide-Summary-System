@@ -46,8 +46,6 @@ export interface Partner {
   logo_path: string | null;
   docx_template_path: string | null;
   pptx_template_path: string | null;
-  quote_template_path: string | null;
-  quote_logo_path: string | null;
   vendors: Vendor[];
 }
 

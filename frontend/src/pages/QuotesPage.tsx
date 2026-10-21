@@ -1,24 +1,22 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, download, fetchBlob } from "../api";
+import { api, download } from "../api";
 import { useAuth } from "../auth";
 import { QUOTE_CATEGORY_LABELS } from "../labels";
 import ProductSelect, { productLabel } from "../ProductSelect";
 import type { Partner, QuoteFile } from "../types";
 
-type Tab = "create" | "template" | "logo" | "files";
+type Tab = "create" | "files";
 const TABS: [Tab, string][] = [
   ["create", "견적서 생성"],
-  ["template", "견적서 양식"],
-  ["logo", "로고"],
   ["files", "참고 자료"],
 ];
 
-/** 영업: 견적서 생성과 그에 쓸 양식·로고·참고 자료 관리. */
+/** 영업: 견적서 참고 자료 관리. (견적서 양식은 '견적서 생성 > 가져오기 > 견적서 양식'에서, 로고는 양식 엑셀 안에) */
 export default function QuotesPage() {
   const [params, setParams] = useSearchParams();
-  const tab = (params.get("tab") as Tab) || "create";
+  const tab: Tab = params.get("tab") === "files" ? "files" : "create";
   const { me } = useAuth();
   const isPlatformAdmin = me?.role === "platform_admin";
   // 플랫폼 관리자는 회사를 골라서, 영업 사용자는 자기 회사 것만 다룬다.
@@ -39,7 +37,7 @@ export default function QuotesPage() {
     <>
       <div className="page-header">
         <h1>견적서</h1>
-        <p className="muted">벤더 규격서·제품 기능 자료를 바탕으로 견적서를 만듭니다. 견적서 양식, 로고, 참고 자료를 먼저 등록해 두세요.</p>
+        <p className="muted">벤더 규격서·제품 기능 자료를 바탕으로 견적서를 만듭니다. 견적서 양식은 견적서 생성 화면에서 올리고, 참고 자료는 여기서 등록해 두세요.</p>
       </div>
       {isPlatformAdmin && (
         <div className="form-row" style={{ marginBottom: 12 }}>
@@ -63,24 +61,6 @@ export default function QuotesPage() {
       {partner.data && (
         <>
           {tab === "create" && <CreateTab partner={partner.data} />}
-          {tab === "template" && (
-            <AssetTab
-              partner={partner.data}
-              kind="quote_template"
-              title="견적서 양식"
-              accept=".xlsx,.docx,.pptx,.pdf"
-              hint="견적서를 만들 때 이 양식의 서식·항목 구성을 따릅니다. Excel(.xlsx), Word(.docx), PowerPoint(.pptx), PDF"
-            />
-          )}
-          {tab === "logo" && (
-            <AssetTab
-              partner={partner.data}
-              kind="quote_logo"
-              title="견적서 로고"
-              accept=".png,.jpg,.jpeg"
-              hint="견적서 머리에 넣을 회사 로고입니다. PNG, JPG (엔지니어 문서용 로고와 따로 관리됩니다)"
-            />
-          )}
           {tab === "files" && <FilesTab partnerId={partner.data.id} />}
         </>
       )}
@@ -93,11 +73,7 @@ function CreateTab({ partner }: { partner: Partner }) {
     queryKey: ["quote-files", partner.id],
     queryFn: () => api<QuoteFile[]>(`/quote-files?partner_id=${partner.id}`),
   });
-  const ready = [
-    ["견적서 양식", !!partner.quote_template_path],
-    ["로고", !!partner.quote_logo_path],
-    ["참고 자료", (files.data?.length ?? 0) > 0],
-  ] as const;
+  const ready = [["참고 자료", (files.data?.length ?? 0) > 0]] as const;
   return (
     <section className="card">
       <h2 className="section-title">견적서 생성</h2>
@@ -116,78 +92,6 @@ function CreateTab({ partner }: { partner: Partner }) {
       <button className="primary" disabled>견적서 생성 (준비 중)</button>
     </section>
   );
-}
-
-function AssetTab({
-  partner, kind, title, accept, hint,
-}: { partner: Partner; kind: "quote_template" | "quote_logo"; title: string; accept: string; hint: string }) {
-  const { me } = useAuth();
-  const queryClient = useQueryClient();
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [file, setFile] = useState<File | null>(null);
-  const ref = partner[`${kind}_path`];
-  // 양식·로고 변경: 견적서 권한이 있는 회사 관리자 (플랫폼 관리자는 항상)
-  const canManage = me?.role === "platform_admin" || (me?.role === "partner_admin" && !!me?.permissions.includes("quote"));
-
-  const upload = useMutation({
-    mutationFn: (f: File) => {
-      const form = new FormData();
-      form.append("file", f);
-      return api<Partner>(`/partners/${partner.id}/assets/${kind}`, { method: "POST", body: form });
-    },
-    onSuccess: (updated) => {
-      queryClient.setQueryData(["partner", partner.id], updated);
-      setFile(null);
-      if (inputRef.current) inputRef.current.value = "";
-    },
-  });
-
-  return (
-    <section className="card">
-      <h2 className="section-title">{title}</h2>
-      <p className="muted">{hint}</p>
-      <p>
-        현재: <span className={`badge ${ref ? "done" : ""}`}>{ref ? "등록됨" : "없음"}</span>{" "}
-        {ref && kind === "quote_template" && (
-          <button className="link" onClick={() => download(`/partners/${partner.id}/assets/${kind}`)}>내려받기</button>
-        )}
-      </p>
-      {ref && kind === "quote_logo" && <AssetPreview partnerId={partner.id} kind={kind} refPath={ref} />}
-      {canManage ? (
-        <form
-          className="form-row"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (file) upload.mutate(file);
-          }}
-        >
-          <label>
-            {ref ? "교체할 파일" : "등록할 파일"}
-            <input ref={inputRef} type="file" accept={accept} onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
-          </label>
-          <button className="primary" disabled={!file || upload.isPending}>{upload.isPending ? "올리는 중…" : "업로드"}</button>
-        </form>
-      ) : (
-        <p className="muted">양식·로고는 견적서 권한이 있는 회사 관리자만 바꿀 수 있습니다.</p>
-      )}
-      {upload.error && <p className="error">{upload.error.message}</p>}
-    </section>
-  );
-}
-
-function AssetPreview({ partnerId, kind, refPath }: { partnerId: number; kind: string; refPath: string }) {
-  const blob = useQuery({
-    queryKey: ["partner", partnerId, kind, refPath],
-    queryFn: () => fetchBlob(`/partners/${partnerId}/assets/${kind}`),
-  });
-  const [url, setUrl] = useState<string>();
-  useEffect(() => {
-    if (!blob.data) return;
-    const objectUrl = URL.createObjectURL(blob.data);
-    setUrl(objectUrl);
-    return () => URL.revokeObjectURL(objectUrl);
-  }, [blob.data]);
-  return url ? <img src={url} alt="견적서 로고" style={{ maxHeight: 60, margin: "4px 0 12px" }} /> : null;
 }
 
 function FilesTab({ partnerId }: { partnerId: number }) {

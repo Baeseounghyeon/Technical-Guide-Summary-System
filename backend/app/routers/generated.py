@@ -150,12 +150,14 @@ def download_generated(
 
 
 def _quote_file(db: Session, user: User, g: GeneratedDocument, fmt: str, meta: list) -> bytes:
-    """견적서 파일: 고른 양식(유니포인트 견적서 모양 엑셀)의 표 안에 채운다. 양식이 지워졌으면 기본 양식."""
+    """견적서 파일: 만들 때 고른 양식(유니포인트 견적서 모양 엑셀)의 표 안에 채운다."""
     from ..models import QuoteTemplate
     from .quote_builder import render
 
     fields = g.fields or {}
     template = db.get(QuoteTemplate, fields["template_id"]) if fields.get("template_id") else None
+    if template is None:
+        raise HTTPException(status.HTTP_410_GONE, "이 견적서를 만든 양식이 삭제되어 파일을 다시 만들 수 없습니다.")
     return render(fields, template, fmt)
 
 

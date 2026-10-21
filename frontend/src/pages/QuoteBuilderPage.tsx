@@ -305,6 +305,11 @@ function QuoteBuilder({ domain, tabs }: { domain: QuoteDomain; tabs: ReactNode }
     setTemplate(t);
     setTemplateChosen(true);
   };
+  // 견적서 양식이 하나뿐이면 그 양식을 골라 둔다 (기본 양식이 없으므로)
+  useEffect(() => {
+    if (!fromId && !templateChosen && templates.data?.length === 1) pickTemplate(templates.data[0]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [templates.data]);
   const pickPrice = async (d: Picked) => {
     if (priceDoc?.id === d.id) return;
     setPriceDoc(d);
@@ -421,7 +426,7 @@ function QuoteBuilder({ domain, tabs }: { domain: QuoteDomain; tabs: ReactNode }
   });
 
   const stepOk: Record<number, boolean> = {
-    1: true, // 양식을 고르지 않으면 기본 양식(유니포인트 견적서)으로 만든다
+    1: !!template, // 기본 양식은 없다: 올린 견적서 양식을 꼭 고른다
     2: !!priceDoc || priceSkipped, // 가격표는 참고용이라 건너뛸 수 있다
     3: priceSkipped || (!!price && price.checked.some(Boolean)),
     4: purchases.length > 0 && loadingIds.length === 0,
@@ -430,7 +435,7 @@ function QuoteBuilder({ domain, tabs }: { domain: QuoteDomain; tabs: ReactNode }
     7: !!title.trim() && !!recipient.trim() && Number(settings.exchange_rate) > 0 && Number(settings.multiplier) > 0,
   };
   const stepHint: Record<number, string> = {
-    1: "위 '가져오기 > 견적서 양식'에서 올린 양식을 고르세요. 고르지 않으면 기본 양식(유니포인트 견적서)으로 만듭니다.",
+    1: "위 '가져오기 > 견적서 양식'에서 견적서 양식(회사 로고가 들어 있는 유니포인트 견적서 모양 엑셀)을 고르세요. 없으면 그 아래에서 올리세요.",
     2: "위 '가져오기 > 제품 가격표'에서 가격표를 고르세요. 가격표는 품명·리스트가 참고용이라 견적 금액 계산에는 쓰지 않습니다(건너뛸 수 있음).",
     3: "참고할 제품을 체크하세요(머리글 칸으로 모두 체크). 가격표는 참고용이라 모두 체크해도 견적서 엑셀에는 들어가지 않습니다.",
     4: "위 '가져오기 > 매입 금액'에서 이번 견적에 넣을 매입 견적(Thales 견적서 PDF)을 모두 체크하세요. 한 건이 견적서 한 행이 됩니다.",
@@ -497,7 +502,7 @@ function QuoteBuilder({ domain, tabs }: { domain: QuoteDomain; tabs: ReactNode }
 
         {step === 1 && (
           <p>
-            선택한 양식: <strong>{template ? template.name : "기본 양식 (유니포인트 견적서)"}</strong>
+            선택한 양식: <strong>{template ? template.name : "아직 고르지 않음"}</strong>
           </p>
         )}
         {step === 2 && (
@@ -986,7 +991,7 @@ function FinalStep(props: {
       <p className="muted" style={{ margin: "0 0 14px" }}>
         목표 공급가 합계는 U14 에 들어가고 P9 = U14, 할인율 P10 = 1 - P9 / (G18 + G19 + …) 로 계산됩니다. 당시 환율·참고 금액은 인쇄 영역 밖 계산 메모 칸에 들어갑니다(비우면 빈칸). 수식(Q7·R7·T13·R15 등)은 양식 그대로 둡니다.
       </p>
-      {block(1, "견적서 양식", <p>{template ? `${template.name} (${template.file_name})` : "기본 양식 (유니포인트 견적서)"}</p>)}
+      {block(1, "견적서 양식", <p>{template ? `${template.name} (${template.file_name})` : "아직 고르지 않음"}</p>)}
       {block(2, "제품 가격표 (참고)", <p>{props.priceDoc?.title ?? (props.priceDoc ? "(제목 없음)" : "사용 안 함")}</p>)}
       {block(4, "매입 견적", <p>{props.purchases.map((p) => p.meta.quote_number || p.doc.title).join(", ") || "아직 고르지 않음"}</p>)}
       {block(6, "작성자 정보", <p>{AUTHOR_FIELDS.map((f) => `${f.label}: ${props.author[f.key] || "-"}`).join(" · ")}</p>)}
@@ -1059,7 +1064,7 @@ function FinalStep(props: {
         <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && setShowPreview(false)}>
           <div className="modal preview-modal" role="dialog" aria-modal="true" aria-label="견적서 미리보기">
             <div className="summary-head">
-              <h2 style={{ margin: 0 }}>견적서 미리보기{template ? ` · ${template.name}` : " · 유니포인트 견적서"}</h2>
+              <h2 style={{ margin: 0 }}>견적서 미리보기{template ? ` · ${template.name}` : ""}</h2>
               <button className="link" onClick={() => setShowPreview(false)}>닫기</button>
             </div>
             <iframe title="견적서 미리보기" className="preview-frame" sandbox="" srcDoc={preview.html} />

@@ -1,4 +1,4 @@
-"""영업(견적서): 업무 구분, 견적서 양식·로고 업로드, 참고 자료 관리와 접근 제한."""
+"""영업(견적서): 업무 구분, 참고 자료 관리와 접근 제한."""
 
 import io
 
@@ -29,18 +29,10 @@ def test_sales_track_and_quote_files(client):
     assert client.get("/api/quote-files", headers=engineer).status_code == 200
     assert client.post("/api/quote-files", files={"file": ("a.pdf", b"%PDF")}, headers=engineer).status_code == 403
 
-    # 견적서 양식·견적서용 로고 (파트너사 자산)
-    r = client.post(
-        f"/api/partners/{partner['id']}/assets/quote_template",
-        files={"file": ("견적양식.xlsx", b"PK\x03\x04fake", "application/octet-stream")},
-        headers=sales,
-    )
-    assert r.status_code == 200 and r.json()["quote_template_path"]
-    r = client.post(f"/api/partners/{partner['id']}/assets/quote_logo", files={"file": ("logo.png", b"\x89PNG", "image/png")}, headers=sales)
-    assert r.json()["quote_logo_path"]
-    assert client.get(f"/api/partners/{partner['id']}/assets/quote_logo", headers=sales).content == b"\x89PNG"
-    r = client.post(f"/api/partners/{partner['id']}/assets/quote_template", files={"file": ("x.exe", b"MZ")}, headers=sales)
-    assert r.status_code == 400
+    # 회사별 견적서 양식·로고는 삭제됨 (견적서 양식은 견적서 생성 > 견적서 양식, 로고는 양식 엑셀 안에)
+    for kind in ("quote_template", "quote_logo"):
+        r = client.post(f"/api/partners/{partner['id']}/assets/{kind}", files={"file": ("logo.png", b"PNG", "image/png")}, headers=sales)
+        assert r.status_code == 422
 
     # 참고 자료: 업로드 → 목록 → 받기 → 삭제
     r = client.post(

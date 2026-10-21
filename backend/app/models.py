@@ -133,7 +133,7 @@ class Partner(Base):
     pptx_template_path: Mapped[str | None] = mapped_column(String(500))
     # 이 회사가 한 달에 쓸 수 있는 AI 처리량(쪽 환산). 비우면 기본값(DEFAULT_MONTHLY_PAGE_QUOTA)
     monthly_page_quota: Mapped[int | None] = mapped_column(Integer)
-    # 영업: 견적서 양식과 견적서에 넣을 로고 (엔지니어 문서용 로고·양식과 따로 관리)
+    # (사용 안 함, 2026-10-21) 예전 회사별 견적서 양식·로고. 견적서 양식은 quote_templates 에 올린 엑셀만 쓴다
     quote_template_path: Mapped[str | None] = mapped_column(String(500))
     quote_logo_path: Mapped[str | None] = mapped_column(String(500))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

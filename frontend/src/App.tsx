@@ -303,8 +303,8 @@ function UserMenu() {
             {subtitle && <div className="muted">{subtitle}</div>}
           </div>
           {canManageLogo && (
-            <button className="dropdown-item" role="menuitem" onClick={() => go(isSales ? "/quotes/work?tab=logo" : "/settings#logo")}>
-              {isSales ? "견적서 로고·양식 변경" : "회사 로고·양식 변경"}
+            <button className="dropdown-item" role="menuitem" onClick={() => go(isSales ? "/quotes/create" : "/settings#logo")}>
+              {isSales ? "견적서 양식 변경" : "회사 로고·양식 변경"}
             </button>
           )}
           <button className="dropdown-item" role="menuitem" onClick={() => go("/requests")}>작업 내역</button>

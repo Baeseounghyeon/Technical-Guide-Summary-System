@@ -13,6 +13,9 @@ from app.worker import run_pending_jobs
 from .conftest import ADMIN, login
 from .test_flow import _partner_with_vendor, _signup_and_approve
 
+# 유니포인트 견적서 모양 엑셀 양식 (공개 저장소에 넣지 않는 개발 PC 파일)
+QUOTE_FORM = Path(__file__).resolve().parents[1] / "app" / "assets" / "quote_unipoint.xlsx"
+
 
 def test_spec_generation_removed(client):
     """규격서 생성·생성한 규격서는 삭제: 그 API 는 없고, 목록도 견적서만 받는다."""
@@ -134,12 +137,10 @@ def test_quote_builder_steps(client, tmp_path: Path):
     engineer = _signup_and_approve(client, admin, "qb-eng@q.example.com", partner["id"])
 
     # 1. 견적서 양식: 유니포인트 견적서 모양의 엑셀만, 영업만 (Word·다른 모양 엑셀은 거절)
-    from app.services.unipoint_quote import TEMPLATE
-
     def add_template(name: str, data: bytes, headers=sales):
         return client.post("/api/quote-templates", data={"name": "견적 양식"}, files={"file": (name, data)}, headers=headers)
 
-    tpl = add_template("tpl.xlsx", TEMPLATE.read_bytes()).json()
+    tpl = add_template("tpl.xlsx", QUOTE_FORM.read_bytes()).json()
     assert tpl["file_ext"] == "xlsx"
     _template_docx(tmp_path / "tpl.docx")
     assert add_template("tpl.docx", (tmp_path / "tpl.docx").read_bytes()).status_code == 400
@@ -147,7 +148,7 @@ def test_quote_builder_steps(client, tmp_path: Path):
     _xlsx(tmp_path / "plain.xlsx", [("제목", "{{제목}}"), ("작성자", "{{작성자}}")])
     r = add_template("plain.xlsx", (tmp_path / "plain.xlsx").read_bytes())
     assert r.status_code == 400 and "Product Number" in r.json()["detail"]
-    assert add_template("tpl.xlsx", TEMPLATE.read_bytes(), engineer).status_code == 403
+    assert add_template("tpl.xlsx", QUOTE_FORM.read_bytes(), engineer).status_code == 403
     assert client.put(f"/api/quote-templates/{tpl['id']}", data={"name": "견적 양식 v2"}, headers=sales).json()["name"] == "견적 양식 v2"
 
     def upload(path: Path, doc_type: str, title: str) -> dict:
@@ -195,7 +196,7 @@ def test_quote_builder_steps(client, tmp_path: Path):
         "title": "[예시은행] Luna Network HSM S750 8식 외 Renewal License 공급 건",
         "recipient": "파트너사",
         "date": "2026-09-28",
-        "template_id": None,
+        "template_id": tpl["id"],
         "price_list_id": price["id"],
         "price": {"columns": items["columns"], "rows": items["rows"][:1]},
         "purchases": [
@@ -206,6 +207,9 @@ def test_quote_builder_steps(client, tmp_path: Path):
                    "company": "예시 주식회사", "address": "[00000] 예시시 예시로 1", "contact": "Tel : 02-000-0000"},
         "settings": {"exchange_rate": 1360, "multiplier": 2.3, "target_total": 20000000},
     }
+    # 기본 양식은 없다: 양식을 고르지 않으면 만들 수 없다
+    r = client.post("/api/quote-builder/preview", json={**body, "template_id": None}, headers=sales)
+    assert r.status_code == 400 and "견적서 양식" in r.json()["detail"]
     preview = client.post("/api/quote-builder/preview", json=body, headers=sales)
     assert preview.status_code == 200, preview.text
     preview = preview.json()
@@ -275,7 +279,7 @@ def test_quote_table_grows_only_when_needed():
     s = uq.QuoteSettings()
     lines, totals = uq.build_lines([uq.Purchase(rows=[row], included=[True], main=0) for _ in range(6)], s)
     q = uq.QuoteDoc(project="p", recipient="r", date="2026-10-19", author={"name": "n"}, lines=lines, totals=totals, settings=s)
-    ws = load_workbook(io.BytesIO(uq.build_xlsx(q)[0])).worksheets[0]
+    ws = load_workbook(io.BytesIO(uq.build_xlsx(q, QUOTE_FORM)[0])).worksheets[0]
     assert [ws[f"A{r}"].value for r in range(18, 24)] == [1, 2, 3, 4, 5, 6]
     assert ws["D24"].value == "- 이하여백 -" and ws["H25"].value == "=SUM(H18:H24)" and ws["H26"].value == "=H25*1.1"
     assert ws.row_dimensions[23].height == ws.row_dimensions[21].height and ws.print_area.endswith("$J$34")
@@ -369,8 +373,10 @@ def test_quote_domains(client, tmp_path: Path):
             files={"file": ("price.xlsx", f)}, headers=sales,
         ).json()
 
+    tpl = client.post("/api/quote-templates", data={"name": "양식"}, files={"file": ("tpl.xlsx", QUOTE_FORM.read_bytes())}, headers=sales).json()
+
     def preview(vendor_id, **extra):
-        return client.post("/api/quote-builder/preview", json={"vendor_id": vendor_id, **extra}, headers=sales)
+        return client.post("/api/quote-builder/preview", json={"vendor_id": vendor_id, "template_id": tpl["id"], **extra}, headers=sales)
 
     assert preview(thales["id"]).status_code == 200
     assert preview(ahnlab["id"]).status_code == 403  # 부여되지 않은 도메인

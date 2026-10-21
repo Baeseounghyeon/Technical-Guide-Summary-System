@@ -102,8 +102,6 @@ class PartnerOut(ORM):
     logo_path: str | None
     docx_template_path: str | None
     pptx_template_path: str | None
-    quote_template_path: str | None
-    quote_logo_path: str | None
     vendors: list[VendorOut]
 
 

@@ -8,7 +8,7 @@ from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..deps import get_active_user, is_admin, require_permission
+from ..deps import get_active_user, is_admin
 from ..models import Partner, Role, User
 from ..schemas import PartnerOut
 from ..services.storage import get_storage
@@ -16,14 +16,12 @@ from .uploads import store_upload
 
 router = APIRouter(prefix="/api/partners", tags=["파트너사"])
 
-AssetKind = Literal["logo", "docx_template", "pptx_template", "quote_template", "quote_logo"]
+AssetKind = Literal["logo", "docx_template", "pptx_template"]
 ALLOWED = {
     "logo": {".png", ".jpg", ".jpeg"},
     "docx_template": {".docx", ".dotx"},
     "pptx_template": {".pptx", ".potx"},
     # 영업: 견적서 양식(엑셀·워드 등)과 견적서용 로고
-    "quote_template": {".xlsx", ".docx", ".pptx", ".pdf"},
-    "quote_logo": {".png", ".jpg", ".jpeg"},
 }
 LOGO_MEDIA_TYPES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg"}
 
@@ -50,8 +48,6 @@ def upload_asset(
     user: User = Depends(get_active_user), db: Session = Depends(get_db),
 ) -> Partner:
     partner = _partner_for(db, user, partner_id, manage=True)
-    if kind.startswith("quote_"):
-        require_permission(db, user, "quote")  # 견적서 양식·로고는 견적서 권한이 있어야
     if file is None and not storage_key:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "파일을 선택하세요.")
     ext = Path(file.filename or "" if file is not None else storage_key).suffix.lower()

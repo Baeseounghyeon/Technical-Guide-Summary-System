@@ -20,7 +20,6 @@
 import html
 import io
 import re
-from contextlib import contextmanager
 from copy import copy
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -34,23 +33,6 @@ from openpyxl.utils.cell import range_boundaries
 from .thales_pdf import PURCHASE_COLUMNS
 from .xlsx_drawing import put_drawing, read_drawing, shift_anchors
 
-TEMPLATE = Path(__file__).resolve().parents[1] / "assets" / "quote_unipoint.xlsx"
-TEMPLATE_KEY = "assets/quote_unipoint.xlsx"
-
-
-@contextmanager
-def template_path():
-    """견적서 양식 파일 경로: 개발 PC 의 파일, 없으면 앱 저장소에서 받는다."""
-    if TEMPLATE.exists():
-        yield TEMPLATE
-        return
-    from .storage import get_storage
-
-    storage = get_storage()
-    if not storage.exists(TEMPLATE_KEY):
-        raise RuntimeError("견적서 기본 양식(assets/quote_unipoint.xlsx)이 저장소에 없습니다. 관리자에게 문의하세요.")
-    with storage.local_path(TEMPLATE_KEY) as path:
-        yield path
 MEDIA_XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 # 견적서는 엑셀(양식 그대로)과 PDF 로 받는다
 FORMATS = ["xlsx", "pdf"]
@@ -417,14 +399,10 @@ def is_quote_form(path: Path) -> bool:
     return find_layout(wb.worksheets[0]) is not None
 
 
-def build_xlsx(q: QuoteDoc, template: Path | None = None) -> tuple[bytes, dict[str, object]]:
+def build_xlsx(q: QuoteDoc, template: Path) -> tuple[bytes, dict[str, object]]:
     """양식의 품목 표(머리글 아래 ~ '- 이하여백 -' 위) 안에 값을 채운다. 품목이 표보다 많을 때만 행을 늘린다.
     (견적서 엑셀, 미리보기용 수식 칸 계산값 {칸: 값})"""
-    if template is None:
-        with template_path() as path:
-            raw = path.read_bytes()
-    else:
-        raw = Path(template).read_bytes()
+    raw = Path(template).read_bytes()
     wb = load_workbook(io.BytesIO(raw), rich_text=True)  # 양식의 부분 서식 글자도 그대로
     drawing = read_drawing(raw)  # 제목 상자·회사 상자 같은 도형은 openpyxl 이 버리므로 따로 옮긴다
     ws = wb.worksheets[0]
@@ -598,13 +576,9 @@ def preview_html(data: bytes, calc: dict) -> str:
 
 # ---------- PDF (고객용 A~J 열 내용, 엑셀 견적서와 같은 순서) ----------
 
-def build_pdf(q: QuoteDoc, template: Path | None = None) -> bytes:
+def build_pdf(q: QuoteDoc, template: Path) -> bytes:
     """고객에게 보내는 내용(인쇄 영역 A~J)만 담는다. 매입·GP 는 넣지 않는다."""
-    if template is None:
-        with template_path() as path:
-            wb = load_workbook(str(path))
-    else:
-        wb = load_workbook(str(template))
+    wb = load_workbook(str(template))
     ws = wb.worksheets[0]
     esc = html.escape
     fixed = lambda ref: esc(str(ws[ref].value or ""))  # noqa: E731 — 양식의 고정 문구
