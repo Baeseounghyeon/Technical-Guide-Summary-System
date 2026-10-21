@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { GRANT_STATUS, ROLE_LABELS, TRACK_LABELS } from "../labels";
+import { EditIcon, TrashIcon } from "./DocumentsPage";
 import { AdminPermissionRequests } from "./PermissionPages";
 import type { AccessGrant, AdminUser, Partner, PartnerUsage, Role, Track, UsageOverview, Vendor } from "../types";
 
@@ -44,6 +45,9 @@ function Members() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin"] }),
   });
   const keyword = q.trim().toLowerCase();
+  // 관리자 계정은 모든 도메인을 보므로 me.vendors 가 등록된 전체 도메인이다. 모두 가진 사용자는 '전체 도메인'으로 줄여 보인다.
+  const allDomains = (me?.vendors ?? []).map((v) => v.name);
+  const hasAll = (u: AdminUser) => u.role === "platform_admin" || (allDomains.length > 0 && allDomains.every((d) => u.domains.includes(d)));
   const trackOf = (u: AdminUser): Track => u.track ?? "engineer";
   const counts = { engineer: 0, sales: 0 };
   for (const u of users.data ?? []) counts[trackOf(u)] += 1;
@@ -82,7 +86,7 @@ function Members() {
         ))}
       </div>
       <div className="form-row" style={{ marginBottom: 8 }}>
-        <label>검색 (이름·메일·회사)<input value={q} onChange={(e) => setQ(e.target.value)} /></label>
+        <label style={{ flex: "0 1 40%" }}>검색 (이름·메일·회사)<input value={q} onChange={(e) => setQ(e.target.value)} /></label>
         <label style={{ flex: "0 0 160px" }}>
           상태
           <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
@@ -100,7 +104,7 @@ function Members() {
       <div className="table-wrap">
         <table style={{ minWidth: 900 }}>
           <thead>
-            <tr><th>소속</th><th>이름</th><th>이메일</th><th>전화번호</th><th>도메인</th><th>상태</th><th /></tr>
+            <tr><th>소속</th><th>이름</th><th>이메일</th><th>전화번호</th><th>도메인</th><th>상태</th><th style={{ width: 120 }}>관리</th></tr>
           </thead>
           <tbody>
             {shown.map((u) => (
@@ -116,8 +120,8 @@ function Members() {
                 <td>{u.email}</td>
                 <td style={{ whiteSpace: "nowrap" }}>{u.phone || "-"}</td>
                 <td>
-                  {u.role === "platform_admin" ? (
-                    <span className="muted">전체 도메인</span>
+                  {hasAll(u) ? (
+                    <span className="badge member" title={allDomains.join(", ")}>전체 도메인</span>
                   ) : u.domains.length === 0 && u.read_grants.length === 0 ? (
                     <span className="muted">없음</span>
                   ) : (
@@ -134,7 +138,6 @@ function Members() {
                 <td style={{ whiteSpace: "nowrap" }}>
                   <span className={`badge ${u.status}`}>{USER_STATUS[u.status]}</span>
                   {u.status === "suspended" && u.suspended_reason === "inactive" && <div className="muted">30일 미접속</div>}
-                  {u.last_seen_at && <div className="muted" title="마지막 접속">{new Date(u.last_seen_at).toLocaleDateString()} 접속</div>}
                 </td>
                 <td style={{ whiteSpace: "nowrap" }}>
                   {editing !== u.id && (
@@ -142,12 +145,18 @@ function Members() {
                       {u.status === "suspended" && (
                         <button className="primary" disabled={reactivate.isPending} onClick={() => reactivate.mutate(u.id)}>정지 해제</button>
                       )}
-                      <button className={u.status === "pending" ? "primary" : "link"} onClick={() => setEditing(u.id)}>
-                        {u.status === "pending" ? "승인하기" : "수정"}
-                      </button>
+                      {u.status === "pending" ? (
+                        <button className="primary" onClick={() => setEditing(u.id)}>승인하기</button>
+                      ) : (
+                        <button className="icon-button sm" title="수정" aria-label={`${u.name} 수정`} onClick={() => setEditing(u.id)}>
+                          <EditIcon />
+                        </button>
+                      )}
                       {u.id !== me?.id && (
                         <button
-                          className="link danger-link"
+                          className="icon-button sm danger"
+                          title="삭제"
+                          aria-label={`${u.name} 삭제`}
                           disabled={remove.isPending}
                           onClick={() => {
                             if (window.confirm(`${u.name}(${u.email}) 가입자를 삭제할까요?\n삭제하면 로그인할 수 없고 목록에서 사라집니다. 올린 문서와 작성 기록은 남습니다.`)) {
@@ -155,7 +164,7 @@ function Members() {
                             }
                           }}
                         >
-                          삭제
+                          <TrashIcon />
                         </button>
                       )}
                     </div>
@@ -508,21 +517,21 @@ function PartnersAndVendors() {
   return (
     <section className="card">
       <h2>파트너사 · 벤더 도메인</h2>
-      <div className="form-row">
-        <form className="form-row" style={{ flex: 1 }} onSubmit={submit(() => createVendor.mutate())}>
-          <label>새 벤더 도메인<input value={vendorName} onChange={(e) => setVendorName(e.target.value)} required /></label>
+      <div className="form-row" style={{ gap: 32 }}>
+        <form className="form-row" style={{ flex: "0 1 auto" }} onSubmit={submit(() => createVendor.mutate())}>
+          <label style={{ flex: "0 1 220px" }}>새 벤더 도메인<input value={vendorName} onChange={(e) => setVendorName(e.target.value)} required /></label>
           <button>추가</button>
         </form>
-        <form className="form-row" style={{ flex: 1 }} onSubmit={submit(() => createPartner.mutate())}>
-          <label>새 파트너사<input value={partnerName} onChange={(e) => setPartnerName(e.target.value)} required /></label>
+        <form className="form-row" style={{ flex: "0 1 auto" }} onSubmit={submit(() => createPartner.mutate())}>
+          <label style={{ flex: "0 1 220px" }}>새 파트너사<input value={partnerName} onChange={(e) => setPartnerName(e.target.value)} required /></label>
           <button>추가</button>
         </form>
       </div>
       {error && <p className="error">{error.message}</p>}
       <p className="muted">파트너사는 체크한 벤더 도메인의 문서와 커뮤니티에만 접근합니다.</p>
       <div className="table-wrap">
-        <table>
-          <thead><tr><th>파트너사</th><th>지원 벤더 도메인</th></tr></thead>
+        <table style={{ width: "auto", minWidth: 0 }}>
+          <thead><tr><th style={{ minWidth: 160 }}>파트너사</th><th style={{ minWidth: 280 }}>지원 벤더 도메인</th></tr></thead>
           <tbody>
             {partners.data?.map((p) => (
               <tr key={p.id}>
