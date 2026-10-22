@@ -19,7 +19,7 @@ import PartnerGuidePage from "./pages/PartnerGuidePage";
 import QuotesPage from "./pages/QuotesPage";
 import { MyRequestsPage } from "./pages/RequestsPages";
 import { ApplyPage, ApprovalsPage } from "./pages/RequestCenterPages";
-import { CreatedGuidesPage, GeneratedListPage, GuideCreatePage } from "./pages/GeneratePages";
+import { CreatedGuidesPage, GeneratedListPage } from "./pages/GeneratePages";
 import QuoteBuilderPage from "./pages/QuoteBuilderPage";
 import HomeDetailPage from "./pages/HomeDetailPage";
 import TrashPage from "./pages/TrashPage";
@@ -52,7 +52,7 @@ export default function App() {
       <Route path="/guides" element={<Protected><GuidesPage /></Protected>} />
       <Route path="/guides/org" element={<Protected><OrgTypePage key="guide-org" docType="guide" /></Protected>} />
       <Route path="/guides/share" element={<Navigate to="/requests/apply?kind=share" replace />} />
-      <Route path="/guides/create" element={<Protected perm="guide"><GuideCreatePage /></Protected>} />
+      <Route path="/guides/create" element={<Protected perm="guide"><RegisteredTypePage key="guide-create" docType="guide" create /></Protected>} />
       <Route path="/guides/created" element={<Protected perm="guide"><CreatedGuidesPage /></Protected>} />
       <Route path="/guides/:id" element={<Protected><GuidePage /></Protected>} />
       <Route path="/partner-guides/:id" element={<Protected><PartnerGuidePage /></Protected>} />

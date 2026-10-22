@@ -2,11 +2,9 @@ import { Fragment, useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, download } from "../api";
-import { useAuth } from "../auth";
 import { languageLabel, STATUS_LABELS, type ExtraKindKey } from "../labels";
 import { productLabel } from "../ProductSelect";
 import { TrashIcon } from "./DocumentsPage";
-import type { DocumentSummary } from "../types";
 
 interface Generated {
   id: number;
@@ -103,50 +101,6 @@ export function GeneratedListPage() {
 }
 
 // ---------- 가이드 생성 / 생성한 가이드 ----------
-
-/** 가이드 생성: 등록한 가이드 문서를 골라 요약 가이드를 만든다 (문서 화면에서 언어를 골라 요약 시작). */
-export function GuideCreatePage() {
-  const { me } = useAuth();
-  const query = me?.role === "platform_admin" ? "doc_type=guide" : `doc_type=guide&uploaded_by=${me?.id}`;
-  const docs = useQuery({ queryKey: ["documents", query], queryFn: () => api<DocumentSummary[]>(`/documents?${query}`), enabled: !!me });
-  return (
-    <>
-      <div className="page-header">
-        <h1>가이드 생성</h1>
-        <p className="muted">
-          등록한 가이드 문서를 골라 요약 가이드를 만듭니다. 새 문서는 <Link to="/documents?type=guide">문서 등록</Link>에서 먼저 올리세요.
-          만든 가이드는 <Link to="/guides/created">생성한 가이드</Link>에서 봅니다.
-        </p>
-      </div>
-      <section className="card">
-        {docs.isLoading && <p className="muted">불러오는 중…</p>}
-        {docs.error && <p className="error">{docs.error.message}</p>}
-        {docs.data?.length === 0 && <p className="muted">등록한 가이드 문서가 없습니다.</p>}
-        {!!docs.data?.length && (
-          <div className="table-wrap">
-            <table style={{ minWidth: 760 }}>
-              <thead><tr><th>문서 이름</th><th>벤더</th><th>제품</th><th>등록 일자</th><th>상태</th><th>가이드 만들기</th></tr></thead>
-              <tbody>
-                {docs.data.map((d) => (
-                  <tr key={d.id}>
-                    <td>{d.title ?? d.url ?? `문서 ${d.id}`}</td>
-                    <td>{d.vendor_name}</td>
-                    <td>{productLabel(d.product, d.product_detail)}</td>
-                    <td style={{ whiteSpace: "nowrap" }}>{new Date(d.created_at).toLocaleDateString()}</td>
-                    <td>{STATUS_LABELS[d.status] ?? d.status}</td>
-                    <td>
-                      {d.status === "parsed" ? <Link to={`/documents/${d.id}`}>요약 가이드 만들기</Link> : <span className="muted">분석 후 가능</span>}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-    </>
-  );
-}
 
 interface MyGuide {
   id: number;

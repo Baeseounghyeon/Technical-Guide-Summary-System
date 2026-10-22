@@ -71,7 +71,8 @@ export default function GuidesPage() {
 
 /** 등록한 규격서·가이드·견적서·브로슈어: 문서 등록에서 그 종류로 올린 문서. 벤더·제품군·상세·(가이드 종류)·파트너·작성자로 거른다.
  *  그 종류를 등록할 권한이 없으면(예: 영업의 가이드, 엔지니어의 규격서) '등록된 ○○'로 같은 조직 사람이 올린 것만 보고 내려받는다. */
-export function RegisteredTypePage({ docType }: { docType: DocTypeKey }) {
+/** create: '가이드 생성' — 등록한 가이드와 같은 화면에서 요약 가이드가 아직 없는 문서만 보여 준다. */
+export function RegisteredTypePage({ docType, create = false }: { docType: DocTypeKey; create?: boolean }) {
   const { me } = useAuth();
   const [filters, go] = useFilters();
   const label = DOC_TYPES.find((t) => t.key === docType)!.label;
@@ -79,7 +80,8 @@ export function RegisteredTypePage({ docType }: { docType: DocTypeKey }) {
   const kindLabel = GUIDE_KINDS.find((k) => k.key === filters.kind)?.label;
   const viewOnly = !!me && me.role !== "platform_admin" && !me.permissions.includes(docType);
   const verb = viewOnly ? "등록된" : "등록한";
-  const base = [`doc_type=${docType}`, ...(viewOnly ? [`partner_id=${me?.partner_id ?? 0}`] : [])];
+  const base = [`doc_type=${docType}`, ...(viewOnly ? [`partner_id=${me?.partner_id ?? 0}`] : []), ...(create ? ["summarized=false"] : [])];
+  const heading = create ? `${label} 생성` : `${verb} ${label}`;
 
   // 파트너·작성자 선택지는 이 종류의 문서 전체에서 뽑는다.
   const all = useQuery({ queryKey: ["documents", base.join("&")], queryFn: () => api<DocumentSummary[]>(`/documents?${base.join("&")}`) });
@@ -89,8 +91,13 @@ export function RegisteredTypePage({ docType }: { docType: DocTypeKey }) {
   return (
     <>
       <div className="page-header">
-        <h1>{verb} {label}</h1>
-        {viewOnly ? (
+        <h1>{heading}</h1>
+        {create ? (
+          <p className="muted">
+            아직 요약 가이드를 만들지 않은 가이드 문서입니다. 문서 이름을 눌러 문서 화면에서 언어를 고르고 요약을 시작하세요. 만든 가이드는{" "}
+            <Link to="/guides/created">생성한 가이드</Link>에서 봅니다.
+          </p>
+        ) : viewOnly ? (
           <p className="muted">같은 조직({me?.partner_name ?? "소속 없음"}) 사람이 등록한 {label}입니다. 내려받기만 할 수 있습니다.</p>
         ) : (
           <p className="muted">
@@ -130,7 +137,7 @@ export function RegisteredTypePage({ docType }: { docType: DocTypeKey }) {
         </div>
       </section>
       <section className="card">
-        <h2 className="section-title">{verb} {kindLabel ?? label}</h2>
+        <h2 className="section-title">{create ? heading : `${verb} ${kindLabel ?? label}`}</h2>
         {/* 종류를 고르면 그 종류만 보이므로 종류 열은 전체일 때만 보여 준다 */}
         {viewOnly && !me?.partner_id ? (
           <p className="muted">소속 조직이 지정되지 않았습니다.</p>

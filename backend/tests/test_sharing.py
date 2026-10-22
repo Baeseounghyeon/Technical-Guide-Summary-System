@@ -45,6 +45,9 @@ def test_guide_sharing_with_approval(client, tmp_path):
 
     guide_id = _exported_guide(client, uploader, vendor["id"], tmp_path)
     export_id = client.get(f"/api/guides/{guide_id}/exports", headers=uploader).json()[0]["id"]
+    # 가이드 생성 화면: 요약 가이드가 아직 없는 문서만 (summarized=false)
+    titles = lambda q: [d["title"] for d in client.get(f"/api/documents?doc_type=guide&{q}", headers=uploader).json()]  # noqa: E731
+    assert titles("summarized=false") == [] and titles("summarized=true") == ["오너 설치 가이드"]
 
     # 1) 같은 벤더의 다른 파트너사에게만 목록이 보이고, 승인 전에는 받을 수 없다.
     shared = client.get("/api/shared-guides", headers=requester).json()

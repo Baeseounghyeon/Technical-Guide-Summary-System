@@ -24,7 +24,7 @@ from ..deps import (
     require_platform_admin,
 )
 from ..catalog import PRODUCT_CATALOG, validate_product
-from ..models import DocStatus, DocType, DocumentShare, DocumentUserShare, GuideKind, JobKind, Partner, Section, SourceDocument, User, UserStatus, Vendor, utcnow
+from ..models import DocStatus, DocType, DocumentShare, DocumentUserShare, Guide, GuideKind, JobKind, Partner, Section, SourceDocument, User, UserStatus, Vendor, utcnow
 from ..schemas import UTCDateTime
 from ..schemas import DocumentDetail, DocumentOut, GuideBrief, SectionOut, SectionPatch
 from ..services.jobs import enqueue
@@ -109,11 +109,12 @@ def list_documents(
     product: str | None = None,
     product_detail: str | None = None,
     shared_to_me: bool = False,
+    summarized: bool | None = None,
     user: User = Depends(get_active_user),
     db: Session = Depends(get_db),
 ) -> list[DocumentOut]:
     """내가 볼 수 있는 문서: 내 조직 문서 + 내 조직에 공유된 문서 + 도메인 권한이 승인된 벤더의 문서.
-    shared_to_me=true 면 다른 조직이 내 조직에 공유한 문서만."""
+    shared_to_me=true 면 다른 조직이 내 조직에 공유한 문서만. summarized=false 면 요약 가이드가 아직 없는 문서만(가이드 생성)."""
     query = select(SourceDocument).where(SourceDocument.deleted_at.is_(None)).order_by(SourceDocument.created_at.desc())
     if product:
         query = query.where(SourceDocument.product == product)
@@ -154,6 +155,9 @@ def list_documents(
         query = query.where(or_(SourceDocument.guide_kind == GuideKind.TECHNICAL, SourceDocument.guide_kind.is_(None)))
     elif guide_kind is not None:
         query = query.where(SourceDocument.guide_kind == guide_kind)
+    if summarized is not None:
+        has_guide = SourceDocument.id.in_(select(Guide.document_id))
+        query = query.where(has_guide if summarized else ~has_guide)
     return [_document_out(d, document_access(db, user, d) or "own") for d in db.scalars(query)]
 
 
